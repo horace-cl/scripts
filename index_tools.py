@@ -500,7 +500,7 @@ def dataset_binned(kind='RD',
                 print(sample)
                 print(len(skim_))
             Data = Data.append(skim_)
-            del skim_
+            del skim_, f_
             
 
     #Apply cuts
@@ -509,12 +509,20 @@ def dataset_binned(kind='RD',
     #Select one candidate per event
     if OneCand:
         Data = select_cand(Data, OneCand, LumiMask=False, verbose=verbose)
-    Binned_Data = join_split.only_split(Data, bins_json_)
+        
+    
     
     #Split data in q2 bins
-    if Bin=='ALL':
-        return Binned_Data
+    if Bin=='Complete':
+        return Data
+    elif Bin.lower()=='jpsi':
+        return Data[(2.8<=Data.DiMuMass) & (Data.DiMuMass<=3.4)]
+    elif Bin.lower()=='psi2s':
+        return Data[(3.5<=Data.DiMuMass) & (Data.DiMuMass<=3.9)]
     else:
+        Binned_Data = join_split.only_split(Data, bins_json_)
+        if Bin=='ALL':
+            return Binned_Data
         return Binned_Data[Bin]
     
     
@@ -549,6 +557,8 @@ def create_gen_df(ntuple,
     df = df.set_index(['run', 'luminositiBlock', 'event'])
     
     return df
+
+
 
 def gen_dataset_binned(
                    kind = 'PHSP',
