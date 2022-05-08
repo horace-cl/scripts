@@ -455,7 +455,15 @@ def textParams(minimum, ncol=2, clean=True):
 
 def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_expected_evts=False):
 
-    limits = pdf.norm_range.limit1d
+    try:
+        pdf.norm_range.spaces
+        limits = [pdf.norm_range.spaces[0].lower.flatten()[0],
+                  pdf.norm_range.spaces[-1].upper.flatten()[0]
+        ]
+    except AttributeError:
+        limits = pdf.norm_range.limit1d
+
+        
     bin_mean = (h[1][1:]+h[1][:-1])/2
     bin_sz = h[1][1]-h[1][0]
     n_events = np.sum(h[0])
@@ -694,14 +702,21 @@ def plot_model(data,
     """
     if not axis:
         fig,axis = plt.subplots()
-    limits = pdf.norm_range.limit1d
+    try:
+        pdf.norm_range.spaces
+        limits = [pdf.norm_range.spaces[0].lower.flatten()[0],
+                  pdf.norm_range.spaces[-1].upper.flatten()[0]
+        ]
+    except AttributeError:
+        limits = pdf.norm_range.limit1d
     if np.all(weights=='none'):
         weights = np.ones_like(data)
     h = np.histogram(data, bins=bins, range=limits, weights=weights)
     bin_mean = (h[1][1:]+h[1][:-1])/2
     bin_size = h[1][1]-h[1][0]
     n_events = np.sum(h[0])
-    scale = bin_size*n_events
+    #scale_ = bin_size*n_events
+    scale = np.sum(np.diff(h[1])*h[0])
     y_err = np.sqrt(h[0]*(1-h[0]/n_events))
     mask_ = h[0]>0
     
