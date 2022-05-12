@@ -515,9 +515,9 @@ def dataset_binned(kind='RD',
     #Split data in q2 bins
     if Bin=='Complete':
         return Data
-    elif Bin.lower()=='jpsi':
+    elif type(Bin)==str and Bin.lower()=='jpsi':
         return Data[(2.8<=Data.DiMuMass) & (Data.DiMuMass<=3.4)]
-    elif Bin.lower()=='psi2s':
+    elif type(Bin)==str and Bin.lower()=='psi2s':
         return Data[(3.5<=Data.DiMuMass) & (Data.DiMuMass<=3.9)]
     else:
         Binned_Data = join_split.only_split(Data, bins_json_)
