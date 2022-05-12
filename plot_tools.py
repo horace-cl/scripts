@@ -401,7 +401,7 @@ def create_grid_for_pulls_Spec(fig, nrows, ncols):
 
 
 
-def textParams(minimum, ncol=2, clean=True):
+def textParams2(minimum, ncol=2, clean=True):
     texts = ['' for c in range(ncol)]
     n_params = len(minimum.hesse())
     
@@ -439,6 +439,62 @@ def textParams(minimum, ncol=2, clean=True):
             text+= name.split('Bin')[0]
             text+= f' = {round(param_value,r)} ' + '$\pm$'
             text+= f' {round(error["error"], r)}\n'
+
+        texts[col]+=text
+        
+    texts = [t.strip() for t in texts]
+        
+    return texts
+
+
+def textParams(minimum, ncol=2, clean=True):
+    texts = ['' for c in range(ncol)]
+    n_params = len(minimum.params)
+    
+    for indx_p, (param, result_) in enumerate(minimum.params.items()):
+        
+        col = indx_p%ncol
+        text=''
+        param_value = minimum.params[param]['value']
+        
+        if 'minuit_hesse' in result_: err = result_['minuit_hesse']['error']
+        elif 'hesse_np' in result_: err = result_['hesse_np']['error']
+        else: err = -1
+        r=1
+        
+        if clean or (param.name.startswith('$') and param.name.endswith("$")):
+            name = param.name
+        else:
+            name = param.name.split('_')[:-1]
+            name = '$'+'_'.join(name)+'$'
+            if name[0]!='$': name = '$'+name
+
+        if err<0:
+            r += 1+int(np.round(-np.log10(np.abs(param_value))))
+
+        elif err<1:
+            r += int(np.round(-np.log10(np.abs(err))))
+
+
+        if 'Y' in name:
+            
+
+            text+= name.split('Bin')[0]
+            if param.value().numpy()>=100000:
+                text+= ' = '+ "{:.2e}".format(param_value) 
+                if err > 0: text+=  ' $\pm$ ' + "{:.2e}".format(err)
+                text+='\n'
+
+            else:
+                text+= ' = '+str(int(param_value))
+                if err > 0: text+=  '$\pm$' + f' {int(err)}'
+                text+='\n'
+
+        else:
+            text+= name.split('Bin')[0]
+            text+= f' = {round(param_value,r)} ' 
+            if err>0 : text+= '$\pm$'+ f' {round(err, r)}'
+            text+='\n'
 
         texts[col]+=text
         
