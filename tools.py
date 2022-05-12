@@ -81,7 +81,7 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
             key = 'minuit_hesse' if 'minuit_hesse' in result else 'hesse_np'
             if param_name_clean in param_min.name:
                 out_dict[param_name_clean] = dict(value=result['value'], 
-                                                  hesse=result[key]['error'])
+                                                  hesse=result.get(key, {'error':-1})['error'])
                 fitted = True
         if not fitted: out_dict[param_name_clean] = dict(value=param.value().numpy())
 
@@ -97,9 +97,10 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
 def create_json_composed(minimum, pdf, output_dir, name, substring_minimum='', substring_pdf=''):
     return crate_json_composed(minimum, pdf, output_dir, name, substring_minimum, substring_pdf)
 
-def crate_json_composed(minimum, pdf, output_dir, name, substring_minimum='', substring_pdf=''):
+def crate_json_composed(minimum, pdf, output_dir, name='', substring_minimum='', substring_pdf=''):
     out_dict = create_params_dict_composed(minimum, pdf, substring_minimum, substring_pdf)
     
+    if not name: name='Params.json'
     if not name.endswith('.json'): name+='.json'
     with open(os.path.join(output_dir, name), 'w+') as jj:
         json.dump(out_dict, jj, indent=4)
