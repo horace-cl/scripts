@@ -1,7 +1,7 @@
 from typing import List, Optional
 from collections import OrderedDict
 
-from zfit.minimizers.baseminimizer import BaseMinimizer
+from zfit.minimizers.baseminimizer import BaseMinimizer, NOT_SUPPORTED
 from zfit.minimizers.fitresult import FitResult
 from zfit.core.interfaces import ZfitLoss
 from zfit.core.parameter import Parameter
@@ -13,55 +13,17 @@ import tensorflow as tf
 #tf.config.experimental.set_memory_growth(gpus[0], True)
 import zfit
 
-
-
-def get_parameter(sub_string, pdf):
-    """Get a parameter of the `pdf` whose name contains the `sub_string` (no special characters)"""
-    sub_string = sub_string.lower()
-    names=list()
-    index=list()
-    for i,p in enumerate(pdf.get_params()):
-        if sub_string in p.name.lower().replace('_', ''):
-            names.append(p.name)
-            index.append(i)
-    if len(names) == 0:
-        raise NotFoundError(f'No parameter contains `{sub_string}`')
-    elif len(names) > 1:
-        print('WARNING!\n', f'More than one match, using the first one')
-        print('MATCHES:   ', names)
-    return pdf.get_params()[index[0]]
-
-
-
-def create_single_constraint(model, parameter):
-
-    if 'afb' in parameter.name.lower():
-        niusance_ = get_parameter('fh', model)
-        return  (
-                 {'type': 'ineq', 'fun': lambda x:  niusance_.value()/2-x[0]},            
-                 {'type': 'ineq', 'fun': lambda x:  niusance_.value()/2+x[0]},
-                )
-
-
-    elif 'fh' in parameter.name.lower():
-        niusance_ = get_parameter('afb', model)
-        return (
-                 {'type': 'ineq', 'fun': lambda x:  x[0]},
-                 {'type': 'ineq', 'fun': lambda x:  3-x[0]},
-                 {'type': 'ineq', 'fun': lambda x:  x[0]/2-niusance_.value()},
-                 {'type': 'ineq', 'fun': lambda x:  x[0]/2+niusance_.value()}
-                )
-
-    else:
-        raise NotImplementedError
-
-
-
 class SLSQP(BaseMinimizer):
     
-    def __init__(self, tolerance=None, verbosity=5, name='SLSQP', 
+    def __init__(self, 
+                 tol=None, 
+                 verbosity=5, 
+                 criterion = None, 
+                 strategy = None, 
+                 minimizer_options = None
+                 maxiter = None,
                  constraints = (),
-                 **minimizer_options):
+                 name='SLSQP' ) :
         
         if 'ftol' not in minimizer_options:
             print('ftol not in minizer_options')

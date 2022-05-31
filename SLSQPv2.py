@@ -109,6 +109,44 @@ SLSQP._add_derivative_methods(gradient=['2-point', '3-point',
 
 
 
+def get_parameter(sub_string, pdf):
+    """Get a parameter of the `pdf` whose name contains the `sub_string` (no special characters)"""
+    sub_string = sub_string.lower()
+    names=list()
+    index=list()
+    for i,p in enumerate(pdf.get_params()):
+        if sub_string in p.name.lower().replace('_', ''):
+            names.append(p.name)
+            index.append(i)
+    if len(names) == 0:
+        raise NotFoundError(f'No parameter contains `{sub_string}`')
+    elif len(names) > 1:
+        print('WARNING!\n', f'More than one match, using the first one')
+        print('MATCHES:   ', names)
+    return pdf.get_params()[index[0]]
+
+
+def create_single_constraint(model, parameter):
+
+    if 'afb' in parameter.name.lower():
+        niusance_ = get_parameter('fh', model)
+        return  (
+                 {'type': 'ineq', 'fun': lambda x:  niusance_.value()/2-x[0]},            
+                 {'type': 'ineq', 'fun': lambda x:  niusance_.value()/2+x[0]},
+                )
+
+
+    elif 'fh' in parameter.name.lower():
+        niusance_ = get_parameter('afb', model)
+        return (
+                 {'type': 'ineq', 'fun': lambda x:  x[0]},
+                 {'type': 'ineq', 'fun': lambda x:  3-x[0]},
+                 {'type': 'ineq', 'fun': lambda x:  x[0]/2-niusance_.value()},
+                 {'type': 'ineq', 'fun': lambda x:  x[0]/2+niusance_.value()}
+                )
+
+    else:
+        raise NotImplementedError
 
 def create_constraint(model, afb_index=False, fh_index=False):
 
