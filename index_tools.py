@@ -452,7 +452,8 @@ def dataset_binned(kind='RD',
                             'Bpt',
                             'l1pt', 
                             'l2pt', 
-                            'k_min_dr_trk_muon'],
+                            'k_min_dr_trk_muon', 
+                            'triggering_muons'],
                    run=None,
                    verbose=False,
                    mu_branches=['HLT*'],
@@ -491,6 +492,7 @@ def dataset_binned(kind='RD',
                 skim_ = create_skim(f_, ['run', 'luminosityBlock', 'event'], 
                             'BToKMuMu', isMC=kind, verbose=verbose, run=run,
                             mu_branches=mu_branches)
+                del f_
             else:
                 skim_ = pd.read_pickle(f)
             skim_ = cuts.apply_cuts(list_cuts, cuts_json_, skim_)
@@ -498,9 +500,9 @@ def dataset_binned(kind='RD',
                 print(len(skim_))
                 skim_ = skim_.sample(**sample)
                 print(sample)
-                print(len(skim_))
+                print(len(skim_), '\n')
             Data = Data.append(skim_)
-            del skim_, f_
+            del skim_
             
 
     #Apply cuts
@@ -552,6 +554,7 @@ def create_gen_df(ntuple,
                     Bpt  = Bpt, Beta = Beta, Bphi = Bphi,
                     mu1pt= Mu1pt, mu1eta= Mu1eta, mu1phi= Mu1phi,
                     mu2pt= Mu2pt, mu2eta= Mu2eta, mu2phi= Mu2phi,
+                    kpt=Kpt, keta=Keta, kphi=Kphi,
                     cosThetaKMu = cosThetaKMu, DiMuMass = Dimuonp4.mass,
                     run = run, luminositiBlock = lumi,  event = event), )
     df = df.set_index(['run', 'luminositiBlock', 'event'])
@@ -572,8 +575,8 @@ def gen_dataset_binned(
     import join_split
     
     bins_json_ = join_split.read_json(bins_json)
-    paths = dict(PHSP = 'DataSelection/Gen_tuples/PHSP/*.root',
-                 BSLLBALL = 'DataSelection/Gen_tuples/BSLLBALL/*.root',
+    paths = dict(PHSP = 'DataSelection/Gen_tuples/PHSP_Photos_2021-05-11_23_19/*.root',
+                 BSLLBALL = 'DataSelection/Gen_tuples/BSLLBALL_Photos_2021-06-03_23_03/*.root',
                 )
     if not path: path = tools.analysis_path(paths[kind])
 
