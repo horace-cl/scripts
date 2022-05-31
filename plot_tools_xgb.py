@@ -149,9 +149,9 @@ def plot_classifier_distributions(model, test, train, print_params=False, bins=2
     auc_test  = roc_auc_score(test.label,test_pred )
     auc_train = roc_auc_score(train.label,train_pred)
     legend_elements = [Patch(facecolor='black', edgecolor='black', alpha=0.4,
-                             label=f'Test (auc) : {round(auc_test,4)}'),
+                             label=f'Train (auc) : {round(auc_train,4)}'),
                       Line2D([0], [0], marker='|', color='black', 
-                             label=f'Train (auc) : {round(auc_train,4)}',
+                             label=f'Test (auc) : {round(auc_test,4)}',
                               markersize=25, linewidth=1),
                        Circle((0.5, 0.5), radius=2, color='red',
                               label=f'Background (ks-pval) : {round(_ks_back,4)}',),
