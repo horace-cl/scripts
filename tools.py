@@ -9,6 +9,17 @@ path_to_latex = '/Users/horace/Documents/projects/CMS/LaTex/AN-21-020/Figures'
 hesse_names   = ['minuit_hesse', 'hesse_np']
 
 
+def beep():
+    print('Not implemented')
+    pass
+
+
+
+def read_txt(txt_path):
+    with open(txt_path, 'r') as ffl_:
+        return ffl_.readlines()
+
+
 def read_json(json_path):
     with open(json_path, 'r') as js:
         return json.load(js)
@@ -89,10 +100,23 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
         cov = minimum.covariance().tolist()
         out_dict['covariance'] = cov
         out_dict['covariance_params'] = [p.name.replace(substring_minimum, '') for p in minimum.params]
+
     except Exception as e:
         print(e)
-        
+
+    fmin_ = minimum.fmin
+    if type(fmin_)==float: out_dict['fmin'] = fmin_
+    else:                  out_dict['fmin'] = fmin_.numpy()       
+     
+    out_dict['status'] = minimum.status
+    out_dict['valid'] = bool(minimum.valid)
+    out_dict['converged'] = bool(minimum.converged)
+    out_dict['edm'] = minimum.edm
+    out_dict['params_at_limit'] = bool(minimum.params_at_limit)
+
     return out_dict
+
+
 
 def create_json_composed(minimum, pdf, output_dir, name, substring_minimum='', substring_pdf=''):
     return crate_json_composed(minimum, pdf, output_dir, name, substring_minimum, substring_pdf)
