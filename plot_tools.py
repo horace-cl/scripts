@@ -24,7 +24,7 @@ def histos_opts(v=0):
     with open(tools.analysis_path(f'scripts/histograms_binning/v{v}.json'), 'r') as jj:
         return json.load(jj)
     
-    
+
 pretty_names = dict(
     cosThetaKMu = r'$\cos \theta_{\ell}$',
     Bpt = '$B$ pT  [GeV/c]',
@@ -41,6 +41,7 @@ pretty_names = dict(
     mu2_eta = '$\mu_{2}$ $\eta$',
     mu1_IP_sig = '$\mu_{1}$ IP/$\sigma_{IP}$',
     mu2_IP_sig = '$\mu_{2}$ IP/$\sigma_{IP}$',
+    fit_eta = '$B^+ \eta$',
 )
 
 
@@ -1223,7 +1224,8 @@ def compare_plot(Data_Num,
                     xerr=bin_size, 
                     yerr=error[finite_mask], 
                     **opts_lower_plot)
-    if lower_lines.lower()=='mean' or lower_lines.lower()=='average':
+    
+    if type(lower_lines)==str and (lower_lines.lower()=='mean' or lower_lines.lower()=='average'):
         _lower.axhline(scale_sum_ratio,     ls=':',  color='grey')
     elif lower_lines:
         _lower.axhline(0.5*scale_sum_ratio, ls='--', color='grey', alpha=0.75)
