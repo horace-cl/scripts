@@ -1,5 +1,6 @@
 import numpy as np
 import pdb
+import pandas as pd
 import warnings
 
 def create_percentile_bins(values, nbins=10):
@@ -108,3 +109,47 @@ def create_accepted(data,
         return data[mask]
     
     return data[mask], w_data[np.array(mask)]
+
+
+
+
+
+
+def read_csv_to_correct_hlts(csv_path='Luminosity/GoldenJson/A_R_Golden.csv'):
+    import tools
+    path_lumi = tools.analysis_path(csv_path)
+    df_lumi   =pd.read_csv(path_lumi, index_col=0) 
+    df_lumi = df_lumi[['A', 'B', 'C', 'D', 'sum', 'frac', 'cumulative', 'start', 'end']]
+    return df_lumi
+
+
+def create_df_corrected_hlts(df, df_lumi, seed=42, verbose=True):
+    """Generate uniform random numbers to make a partition of the data. The parition is made with the information of the df_lumi table.
+    If an event has the random number <=end and  >start, then we assing the label of the corresponding HLT.
+    If either of the muons of a candidate fired the HLT of label asigned  previously we kept it, else we discard it.
+
+    `df` must contain columns with information is muon1 or muon2 is triggering"""
+
+    np.random.seed(seed)
+    df['rand'] = np.random.uniform(size=len(df))
+
+
+    df_accepted = pd.DataFrame() 
+    if verbose:
+        print('\t', '\t', 'Slice','\t','%', '\t', 'Accepted', '  %')
+    for HLT, row in df_lumi.iterrows():
+        if HLT in ['Mu9_IP0', 'Mu9_IP3']: continue
+        if HLT == 'Total': continue
+        slice_ = df.query(f'{row.start}<rand<={row.end}')
+        accepted = slice_.query(f'Muon1_HLT_{HLT}==1 or Muon2_HLT_{HLT}==1')
+        accepted['Slice'] = HLT
+        df_accepted = df_accepted.append(accepted)
+        effi = '-' if  len(slice_)==0 else round(100*len(accepted)/len(slice_), 1)
+        if verbose:
+            print(HLT, '\t',len(slice_), '\t',round(100*len(slice_)/len(df), 1), '\t', len(accepted), '\t', effi,)
+    if verbose:
+        print('Initial : ', len(df))
+        print('Passed  : ', len(df_accepted))
+        print('Eff.    : ', round(len(df_accepted)/len(df),4))
+    
+    return df_accepted
