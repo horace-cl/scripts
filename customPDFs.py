@@ -7,6 +7,7 @@ import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
 import math
 import zfit
+import scipy
 
 version =  zfit.__version__.split('.')
 if int(version[1])>=5:
@@ -17,6 +18,7 @@ else:
 from zfit.models.dist_tfp import WrapDistribution
 from collections import OrderedDict 
 from scipy.special import binom
+from scipy.integrate import quad
 
 
 
@@ -65,7 +67,7 @@ class non_negative_chebyshev(zfit.pdf.BasePDF):
             params[f'c{indx}'] = c
 
         super().__init__(obs, params, name=name+f' Deg. {self.degree}')
-#hola mundo
+
 
     def _unnormalized_pdf(self, x):
         x_ = z.unstack_x(x)
@@ -114,6 +116,17 @@ class bernstein(zfit.pdf.BasePDF):
             pdf += basis[i]
 
         return pdf
+    
+    def _cdf(self,x,liminf):
+        liminf=-1
+        return quad(self._unnormalized_pdf, mininf, x)[0]
+
+        # def _cdf_single(self, x, *args):
+        # _a, _b = self._get_support(*args)
+        # return integrate.quad(self._pdf, _a, x, args=args)[0]
+
+    # def _cdf(self, x, *args):
+        # return self._cdfvec(x, *args)
     
 
 class truncated_bernstein(zfit.pdf.BasePDF):  
