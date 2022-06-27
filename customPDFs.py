@@ -17,6 +17,7 @@ else:
 from zfit.models.dist_tfp import WrapDistribution
 from collections import OrderedDict 
 from scipy.special import binom
+from scipy.integrate import quad
 
 
 
@@ -50,7 +51,31 @@ class decayWidth(zfit.pdf.BasePDF):
         pdf += AFB*cos_l
 
         return pdf
-    
+
+    def cdf(self, x):
+        """First naive implementation of th cdf using the inherited integration"""
+
+        #Extract the values to evaluate the cdf
+        cos_l = z.unstack_x(x)
+        #Extract the limits of integration
+        limits = self.norm_range.limit1d
+
+        # Since quad takes floats, we cannot pass it a list or array
+        # Therefore we iterate over each value
+        # Takes too much time, how can we improve it?
+        cdfs = list()   
+        for val in cos_l:
+            # The output of quad is a tuple, where the first entry is the value and the second the error
+            #integral = quad(self.pdf, limits[0], val)[0]
+            if val<=limits[0]: integral=0
+            else:              integral = self.integrate([[limits[0]], [val]]).numpy()[0]
+            cdfs.append(integral)
+        #Convert it to a np array
+        cdfs = np.array(cdfs)
+        #Extract the normalization
+        norm = self.integrate([[limits[0]], [limits[1]]]).numpy()[0]
+        return cdfs/norm
+        
     
     
 class non_negative_chebyshev(zfit.pdf.BasePDF):
