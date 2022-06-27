@@ -105,7 +105,7 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
         print(e)
 
     fmin_ = minimum.fmin
-    if type(fmin_)==float: out_dict['fmin'] = fmin_
+    if 'float' in str(type(fmin_)) : out_dict['fmin'] = float(fmin_)
     else:                  out_dict['fmin'] = fmin_.numpy()       
      
     out_dict['status'] = minimum.status
@@ -296,7 +296,12 @@ def find_params_substrinsg(model, substrings):
         params.append(p)
     return params
 
-
+def params_substring_to_dict(model, substrings):
+    params = dict()
+    for subs in substrings:
+        p = find_param_substring(model, subs)
+        params[subs] = p
+    return params
 
 
 def create_params_dict(model):
