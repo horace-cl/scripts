@@ -33,9 +33,7 @@ class decayWidth(zfit.pdf.BasePDF):
     """
     def __init__(self, AFB, FH, obs, name="angular_dist" ):
         # se debe definir los parametros a pasar a la pdf
-        params = {
-              'AFB': AFB,
-              'FH': FH, }
+        params = {'AFB': AFB,'FH': FH, }
         super().__init__(obs, params, name=name)
 
 
