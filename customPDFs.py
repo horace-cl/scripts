@@ -7,6 +7,7 @@ import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
 import math
 import zfit
+import scipy
 
 version =  zfit.__version__.split('.')
 if int(version[1])>=5:
@@ -139,6 +140,18 @@ class bernstein(zfit.pdf.BasePDF):
             pdf += basis[i]
 
         return pdf
+################cdf 
+       # def cdf(self,x):
+        # min_=self.obs.limits[0]
+        # cdf= quad(self.pdf,min_,x)
+        # return cdf
+        
+        # def _cdf_single(self, x, *args):
+        # _a, _b = self._get_support(*args)
+        # return integrate.quad(self._pdf, _a, x, args=args)[0]
+
+    # def _cdf(self, x, *args):
+        # return self._cdfvec(x, *args)
     
 
 class truncated_bernstein(zfit.pdf.BasePDF):  
