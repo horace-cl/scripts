@@ -35,6 +35,7 @@ pretty_names = dict(
     cosA = r'$\cos \alpha$',
     signLxy = r'$L_{xy}/\sigma_{Lxy}$',
     PDL = 'PDL  [cm]',
+    ePDL = r'$\sigma_{PDL}$ [cm]',
     BMass = 'B mass  [GeV/$c^2$]',
     DiMuMass = '$\mu^+\mu^-$ mass  [GeV/$c^2$]',
     mu1_eta = '$\mu_{1}$ $\eta$',
@@ -42,9 +43,10 @@ pretty_names = dict(
     mu1_IP_sig = '$\mu_{1}$ IP/$\sigma_{IP}$',
     mu2_IP_sig = '$\mu_{2}$ IP/$\sigma_{IP}$',
     fit_eta = '$B^+ \eta$',
+    fit_k_eta = '$K^+ \eta$',
+    fit_l1_eta = r'$\mu_{1} \eta$ - (fitted)',
+    fit_l2_eta = r'$\mu_{2} \eta$ - (fitted)',
 )
-
-
 
 
 ######################################## WEIGHTED 1D HISTOGRAMS  ########################################
@@ -521,6 +523,49 @@ def textParams(minimum, ncol=2, clean=True):
     return texts
 
 
+def textParams_from_model(model, ncol=1, clean=True):
+    texts = ['' for c in range(ncol)]
+    n_params = len(model.get_params())
+    
+    for indx_p, param in enumerate(model.get_params()):
+        
+        col = indx_p%ncol
+        text=''
+        param_value = param.value().numpy()
+        
+        r=1
+        
+        if clean or (param.name.startswith('$') and param.name.endswith("$")):
+            name = param.name
+        else:
+            name = param.name.split('_')[:-1]
+            name = '$'+'_'.join(name)+'$'
+            if name[0]!='$': name = '$'+name
+
+
+        if 'Y' in name:
+            
+            text+= name.split('Bin')[0]
+            if param.value().numpy()>=100000:
+                text+= ' = '+ "{:.2e}".format(param_value) 
+                text+='\n'
+
+            else:
+                text+= ' = '+str(int(param_value))
+                text+='\n'
+
+        else:
+            text+= name.split('Bin')[0]
+            text+= f' = {round(param_value,r)} ' 
+            text+='\n'
+
+        texts[col]+=text
+        
+    texts = [t.strip() for t in texts]
+        
+    return texts
+
+
 
 
 
@@ -864,7 +909,7 @@ def plot_model(data,
                                 ls=ls[j],
                                 linewidth=linewidths[j],
                                 color=edgecolors[i], 
-                                label=name_,
+                                label=name_.replace(remove_string, ' ').replace('  ', ' '),
                                 zorder = zorders[i]*10)
 
     
@@ -876,8 +921,10 @@ def plot_model(data,
             elif len(_)==1: _ = _[0]
             else: _ = _[i]
             return _
-        
-        texts = textParams(print_params, params_text_opts.get('ncol', 2))
+        if type(print_params)==bool:
+            texts = textParams_from_model(model, params_text_opts.get('ncol', 2))
+        else:
+            texts = textParams(print_params, params_text_opts.get('ncol', 2))
         x = params_text_opts.get('x',None)
         y = params_text_opts.get('y',None)
         if 'x' in params_text_opts: del params_text_opts['x']
@@ -923,7 +970,10 @@ def plot_model(data,
         chi2 = plot_pull(h, pdf, xlabel, axis_pulls, return_chi2=True, return_expected_evts=return_expected_evts)
         if type(chi2) in [list, tuple] : chi2, expected_events = chi2
         if print_chi2_dof:
-            dof_int = bins-len(pdf.params) if not print_params else bins-len(print_params.params)
+            n_params = len(pdf.params)
+            if print_params and type(print_params)!=bool:
+                n_params = len(print_params.params)
+            dof_int = bins-n_params
             dof_int -=1
             #print(chi2)
             tex_chi = r'$ \chi^2 /DOF$ = ' +f'{round(chi2,3)}/{dof_int} = {round(chi2/dof_int,3)}'
