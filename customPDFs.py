@@ -117,10 +117,11 @@ class bernstein(zfit.pdf.BasePDF):
 
         return pdf
     
-    def _cdf(self,x,liminf):
-        liminf=-1
-        return quad(self._unnormalized_pdf, mininf, x)[0]
-
+    def cdf(self,x):
+        min_=self.obs.limits[0]
+        cdf= quad(self.pdf,min_,x)
+        return cdf
+        
         # def _cdf_single(self, x, *args):
         # _a, _b = self._get_support(*args)
         # return integrate.quad(self._pdf, _a, x, args=args)[0]
