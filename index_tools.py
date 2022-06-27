@@ -484,6 +484,14 @@ def dataset_binned(kind='RD',
     if 'RD' in kind and '*' not in path:    
         Data = pd.read_pickle(path)
         Data = cuts.apply_cuts(list_cuts, cuts_json_, Data)
+    elif 'RD' in kind and 'pkl' in path:
+        Data = pd.DataFrame()
+        files = glob(path)
+        files.sort(reverse=True)
+        for file in files:
+            file_pkl = pd.read_pickle(file)
+            file_pkl = cuts.apply_cuts(list_cuts, cuts_json_, file_pkl)
+            Data = Data.append(file_pkl)
     else:
         Data = pd.DataFrame() 
         for f in glob(path):
@@ -507,7 +515,7 @@ def dataset_binned(kind='RD',
 
     #Apply cuts
     Data = cuts.apply_cuts(list_cuts, cuts_json_, Data)
-    
+
     #Select one candidate per event
     if OneCand:
         Data = select_cand(Data, OneCand, LumiMask=False, verbose=verbose)
