@@ -289,11 +289,17 @@ if __name__ == '__main__':
 						action='store',
 						default=None, 
                        help='ID for cuts.json')
+    
     parser.add_argument('-w',
 					   action='store',
 					   default='all', 
                        help='which cuts to apply')
-    
+
+    parser.add_argument('-wn',
+                       action='store',
+                       default='none', 
+                       help='which cuts NOT to apply, if more than 1, must be separated by _')
+
     
     parser.add_argument('--inputdir',
                        action='store',
@@ -341,6 +347,17 @@ if __name__ == '__main__':
                         type=int, 
                         default=0,
                         help='Seed for random selection of events. Given fraction')
+
+
+    parser.add_argument('--columns',
+                        action='store', 
+                        type=str, 
+                        default='all',
+                        help='Which columns to save. Allowed strings are:\
+                        all -> All columns returned so far, all B Table from NanoAOD, and some from muon Tables, and Triger branches\
+                        minimal -> All columns needed to apply all cuts, produce XGB column, a Kinematics, as well as the mass and angular var for the 2D fit'
+
+                    )
     
     args = parser.parse_args() 
     
@@ -393,6 +410,16 @@ if __name__ == '__main__':
     
     
     
+    lists_of_columns = dict(
+        minimal = ['Bpt',  'fit_eta',    'fit_phi',
+                      'kpt',  'fit_k_eta',  'fit_k_phi',  
+                      'l1pt', 'fit_l1_eta', 'fit_l1_phi', 
+                      'l2pt', 'fit_l2_eta', 'fit_l2_phi',
+                      'DiMuMass', 'BMass', 'cosThetaKMu',
+                      'PDL', 'prob', 'signLxy', 'cosA',
+                      'mu1_IP_sig', 'mu2_IP_sig'
+                     ],
+        )
     
     
     #Select input files
@@ -433,7 +460,7 @@ if __name__ == '__main__':
     if args.c: 
         import cuts
         json_cuts = cuts.read_cuts_json(int(args.c))
-        if args.w == 'all':
+        if 'all' in args.w:
             list_cuts = ['resonance_rejection', 
                          'anti_radiation_veto',
                          'Quality', 
@@ -442,6 +469,9 @@ if __name__ == '__main__':
                          'Bpt','l1pt', 'l2pt', 
                          'k_min_dr_trk_muon', 
                          'triggering_muons']
+            if any(var in args.w for var in ['jpsi', 'psip', 'resonances']):
+                list_cuts.remove('resonance_rejection')
+                list_cuts.remove('anti_radiation_veto')
         elif args.w == 'rab':
             list_cuts = ['resonance_rejection', 'anti_radiation_veto', 'Bpt']
         elif args.w == 'keep_resonances':
@@ -464,6 +494,12 @@ if __name__ == '__main__':
         else:
             raise NotImplementedError
 
+
+
+    #Remove cuts from the list_cuts
+    if args.wn!='none':
+        for val in args.wn.split('_'):
+            list_cuts.remove(val)
 
 
 
@@ -541,6 +577,7 @@ if __name__ == '__main__':
     print('PYTHON VERSION: ',python_version(), '\n\n')
         
     DF = pd.DataFrame()
+    print('n Files: ', len(files))
     print('FILES\n', files)
     info = ['run', 'luminosityBlock', 'event']
 
@@ -579,10 +616,16 @@ if __name__ == '__main__':
             print(len(temp))
             #temp = cuts.apply_simple_cut(5.0, temp, column = 'BMass', type_='ge')
             #temp = cuts.apply_simple_cut(5.7, temp, column = 'BMass', type_='le')
-            if args.w in ['jpsi', 'psi2s']:
-                mass_window = [2.8, 3.4] if args.w=='jpsi' else [3.4,4.0]
-                print('\n', args.w, '\t->Dimuon window : ',mass_window)
-                temp = temp.query(f'{mass_window[0]}<=DiMuMass<{mass_window[1]}')
+            #is_res = [x if x in args.w.lower() for x in ['jpsi', 'psip', 'psi2s', 'resonances']]
+            is_res = [x for x in ['jpsi', 'psip', 'psi2s', 'resonances'] if x in args.w]
+            if is_res:
+                dimuon_mass_windows = dict(jpsi = [2.8, 3.4], 
+                                            psip = [3.4, 4.0], 
+                                            psi2s = [3.4, 4.0], 
+                                            resonances=[2.8, 4.0])
+                dimuon_mass_window =  dimuon_mass_windows[is_res[0]]
+                print('\n', args.w, '\t->Dimuon window : ',dimuon_mass_window)
+                temp = temp.query(f'{dimuon_mass_window[0]}<=DiMuMass<{dimuon_mass_window[1]}')
             elif args.w == 'sidebands':
                 leftw  = [5.0, 5.15] 
                 rightw = [5.4, 5.7]
@@ -639,6 +682,14 @@ if __name__ == '__main__':
         print('Initial :' , len(DF))
         DF = cuts.apply_cuts(['XGB'], json_cuts, DF)
         print('Final   :', len(DF))
+
+
+    if args.columns != 'all':
+        print('Saving columns...\n')
+        save_cols = lists_of_columns.get(args.columns, list(DF.keys()))
+        save_cols += [col for col in DF.keys() if 'XGB' in col] # if there is a column named *XGB* add it
+        DF = DF[save_cols]
+        print(save_cols, '\n... saved :)')
 
     if args.outputfile:
         name = args.outputfile
