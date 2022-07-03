@@ -610,7 +610,7 @@ def plot_projection(data, model, var_to_integrate, axis, bins=70,  return_chi2 =
                          axis, bins, **kwargs)
 
     axis.legend(loc=kwargs.get('label_pos', 'best'),
-                fontsize=kwargs.get('label_size', 15), 
+                fontsize=kwargs.get('label_size', 18), 
                 ncol=2,  frameon=True)
     axis.set_ylim(0, max(h[0])*1.2)
     
@@ -900,7 +900,7 @@ def plot_model(data,
         axis.set_ylim(0, np.max(h[0])*1.3)
     axis.set_xlim(limits)
     axis.set_ylabel('Events / '+str(round(bin_size, kwargs.get('round_binsz', 4))))
-    axis.legend(fontsize=kwargs.get('fontsize', 18), 
+    axis.legend(fontsize=kwargs.get('fontsize', 12), 
                 loc=kwargs.get('loc', 1), 
                 frameon=kwargs.get('frameon', True), 
                 framealpha=kwargs.get('framealpha', 0.8), 

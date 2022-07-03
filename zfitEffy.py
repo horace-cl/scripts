@@ -118,9 +118,13 @@ def create_bernstein_models(obs, max_degree,
     low = None ,
     up = 500,
     step = 0.00001 ,
-    fixed_coef=-1):
+    fixed_coef=-1,
+    retParams = False
+    ):
 
     models = dict()
+    
+    coefsArray = list()
     
     def ini_val(rand):
         if rand:
@@ -145,6 +149,9 @@ def create_bernstein_models(obs, max_degree,
                     if  fixed_coef!=i else 1 for i in range(j+1)]
         if truncated: models[j] = truncated_bernstein(coefsR, obs)
         else: models[j] = bernstein(coefsR, obs)
+        coefsArray.append(coefsR)
+    if retParams:
+        return models, coefsArray
     return models
     
     
