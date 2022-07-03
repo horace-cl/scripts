@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import uproot3 as uproot
 import os
-import best_cand
+#import best_cand
+from index_tools import create_GEN_cand_mask
 import resonance_rejection_antiRad_Veto
 from termcolor import colored, cprint
 from awkward0.array.jagged import JaggedArray
@@ -237,7 +238,7 @@ def flatten_to_df(file, mu_branches, b_branches, mu1, mu2, isMC=False, qcuts=Fal
     
     
     if isMC:
-        gen_mask = best_cand.create_GEN_cand_mask(file)
+        gen_mask = create_GEN_cand_mask(file)
         flat_dict['GENCand'] = gen_mask.flatten()
 
     df = create_df(flat_dict)
