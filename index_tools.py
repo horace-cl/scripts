@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from flatten_NanoAODs import expand_simple_branches, trg_branches
 from termcolor import colored, cprint
+from glob import glob
+import cuts
 #import pdb
 #from IPython.core.debugger import set_trace
 
@@ -374,7 +376,7 @@ def select_cand(df, var, LumiMask=True, verbose=False):
     else:           df_sorted = df.sort_index()
     
     #Columns to print if verbose
-    columns = ['mu1_pt', 'mu2_pt', 'kpt', 'cosA', 'prob', 'BMass']
+    columns = ['l1pt', 'l2pt', 'kpt', 'cosA', 'prob', 'BMass']
     if 'L_XGB' in df: columns+=['L_XGB']
     
     #Dataframe to be filled with one candidate per event only
@@ -388,6 +390,8 @@ def select_cand(df, var, LumiMask=True, verbose=False):
     cc = 0
     
     #Iterate over all events 
+    total = len(cands_event)
+    print_counter=0
     for i_ , (indx, cands) in enumerate(cands_event.iteritems()):
         # Break if the number of candidates is equal than one
         # The events are ordered from higher to lower number of candidates
@@ -398,13 +402,17 @@ def select_cand(df, var, LumiMask=True, verbose=False):
         EVTS = df_sorted.loc[indx]
         
         # Check if the candidates share the same muon
-        same_muon1.append(np.all(EVTS.mu1_pt==EVTS.mu1_pt.iloc[0]))
-        same_muon2.append(np.all(EVTS.mu2_pt==EVTS.mu2_pt.iloc[0]))
+        same_muon1.append(np.all(EVTS.l1pt==EVTS.l1pt.iloc[0]))
+        same_muon2.append(np.all(EVTS.l2pt==EVTS.l2pt.iloc[0]))
         # If they do not have the same muon in leading and trailing:
         # print some info
         if not(same_muon1[-1] or same_muon2[-1]) and verbose:
             print(EVTS[columns].to_markdown())
             print('\n')
+
+        if i_>(total/20)*print_counter==0:
+            print(100*i_/len(cands_event))
+            print_counter+=1
             
         #################################################
         #Select best canidadte based on the highest var #
@@ -437,9 +445,52 @@ def select_cand(df, var, LumiMask=True, verbose=False):
 
 
 
+def read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file):
+    #If Data is MC I read from NanoAOD
+    #Else RealData is already in pd.DataFrames
+    if 'RD' in kind and '*' not in path:    
+        Data = pd.read_pickle(path)
+        Data = cuts.apply_cuts(list_cuts, cuts_json_, Data)
+    elif 'RD' in kind and 'pkl' in path:
+        Data = pd.DataFrame()
+        files = glob(path)
+        files.sort(reverse=True)
+        for file in files:
+            print(file)
+            file_pkl = pd.read_pickle(file)
+            if apply_cuts_per_file:
+                file_pkl = cuts.apply_cuts(list_cuts, cuts_json_, file_pkl)
+                if type(sample_dict)==dict:
+                    print(len(file_pkl))
+                    file_pkl = file_pkl.sample(**sample_dict)
+                    print(sample_dict)
+                    print(len(file_pkl), '\n')
+            Data = Data.append(file_pkl)
+    else:
+        Data = pd.DataFrame() 
+        for f in glob(path):
+            if f.endswith('root'):
+                f_ = uproot.open(f)['Events']
+                skim_ = create_skim(f_, ['run', 'luminosityBlock', 'event'], 
+                            'BToKMuMu', isMC=kind, verbose=verbose, run=run,
+                            mu_branches=mu_branches)
+                del f_
+            else:
+                skim_ = pd.read_pickle(f)
+            if apply_cuts_per_file:
+                skim_ = cuts.apply_cuts(list_cuts, cuts_json_, skim_)
+            if type(sample_dict)==dict:
+                print(len(skim_))
+                skim_ = skim_.sample(**sample_dict)
+                print(sample_dict)
+                print(len(skim_), '\n')
+            Data = Data.append(skim_)
+            del skim_
+    return Data
+
 def dataset_binned(kind='RD', 
                    Bin ='ALL', 
-                   cuts_json=12, 
+                   cuts_json=14, 
                    bins_json=3, 
                    OneCand='prob',
                    path=None,
@@ -457,63 +508,68 @@ def dataset_binned(kind='RD',
                    run=None,
                    verbose=False,
                    mu_branches=['HLT*'],
-                   sample=None,
+                   sample_dict=None,
+                   apply_cuts_per_file=True,
                    **kwargs
                   ):
     
     import tools
     import join_split
-    import cuts
-    from glob import glob
+    
+    
     
     cuts_json_ = cuts.read_cuts_json(cuts_json)
     bins_json_ = join_split.read_json(bins_json)
     
-    paths = dict(RD=f'DataSelection/DataSets/CRAB_RE_AUG_2021/Skim9/Skim{bins_json}/Complete.pkl',
-                 BSLL='DataSelection/NanoAOD/BTOSLL/Aug21/BParkNANO_mc_private_*.root',
-                 PHSP='DataSelection/NanoAOD/PHSP/Aug21/BParkNANO_mc_private_*.root',
-                 RDJPSI=f'DataSelection/DataSets/JPsi/A1.pkl',
-                 RD_5per='DataSelection/DataSets/5percent/*.pkl'
+    default_paths = dict(
+                RD=f'DataSelection/DataSets/CRAB_RE_AUG_2021/Skim9/Skim{bins_json}/Complete.pkl',
+                BSLL=['OfficialMC/BuToKMuMu_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen'              ## --> Official <-- ##
+                        '/OfficialMC_BuToKMuMu_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen___2022-01-27_15_37' #############
+                        '/220127_143924/0000/BParkNANO_mc_MonteCarlo_*.root',                      ######################
+                        'DataSelection/NanoAOD/BTOSLL/Aug21/BParkNANO_mc_private_*.root',          # --> 1st Private 
+                        #'DataSelection/NanoAOD/BTOSLL/TrgNanoAODs/BParkNANO_mc_private_*.root',   # --> 2nd Private (TrgNano) Not Working, Missing Variables!
+                        'DataSelection/NanoAOD/BTOSLL/FiltersMarch22/BParkNANO_mc_private_*.root', # --> 3rd Private (Filters)
+                        ],
+                 BSLL_priv='DataSelection/NanoAOD/BTOSLL/Aug21/BParkNANO_mc_private_*.root',
+                 BSLL_filters='DataSelection/NanoAOD/BTOSLL/FiltersMarch22/BParkNANO_mc_private_*.root', 
+                 PHSP=['DataSelection/NanoAOD/PHSP/Aug21/BParkNANO_mc_private_*.root',
+                       'DataSelection/NanoAOD/PHSP/Dec21/BParkNANO_mc_private_*.root',
+                       'DataSelection/NanoAOD/PHSP/Filters1/BParkNANO_mc_private_*.root',
+                       'DataSelection/NanoAOD/PHSP/Jan22/BParkNANO_mc_private_*.root'],
+                 PHSP_priv='DataSelection/NanoAOD/PHSP/Aug21/BParkNANO_mc_private_*.root',
+                 RD_5per='DataSelection/DataSets/5percent/*.pkl',
+                 RD_Resonances='DataSelection/DataSets/Resonances/*.pkl',
+                 JPSI = '/OfficialMC/BuToKJPsiMuMu_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen/'
+                        'OfficialMC_BuToKJPsiMuMu_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen___2022-03-21_16_52/'
+                        '220321_155435/0000/BParkNANO_mc_MonteCarlo*.root',
+                 PSI2S='/OfficialMC/BuToKPsi2SMuMu_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen/'
+                        'OfficialMC_BuToKPsi2SMuMu_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen___2022-03-21_16_52/'
+                        '220321_155402/0000/BParkNANO_mc_MonteCarlo*.root'
                 )
     
-    if not path: path = tools.analysis_path(paths[kind])
-    else: path = tools.analysis_path(path)
-    
-    #If Data is MC I read from NanoAOD
-    #Else RealData is already in pd.DataFrames
-    if 'RD' in kind and '*' not in path:    
-        Data = pd.read_pickle(path)
-        Data = cuts.apply_cuts(list_cuts, cuts_json_, Data)
+    if not path: path = default_paths[kind]
+
+    #Read Data
+    if type(path)==str:
+        Data = read_NanoAOD_PKL(tools.analysis_path(path), list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file)
     else:
-        Data = pd.DataFrame() 
-        for f in glob(path):
-            if f.endswith('root'):
-                f_ = uproot.open(f)['Events']
-                skim_ = create_skim(f_, ['run', 'luminosityBlock', 'event'], 
-                            'BToKMuMu', isMC=kind, verbose=verbose, run=run,
-                            mu_branches=mu_branches)
-                del f_
-            else:
-                skim_ = pd.read_pickle(f)
-            skim_ = cuts.apply_cuts(list_cuts, cuts_json_, skim_)
-            if type(sample)==dict:
-                print(len(skim_))
-                skim_ = skim_.sample(**sample)
-                print(sample)
-                print(len(skim_), '\n')
-            Data = Data.append(skim_)
-            del skim_
-            
+        Data = pd.DataFrame()
+        if not run: run=1
+        for indx, path_value in enumerate(path):
+            _data = read_NanoAOD_PKL(tools.analysis_path(path_value), list_cuts, cuts_json_, kind, verbose, run+indx, mu_branches, sample_dict, apply_cuts_per_file)
+            print(_data)
+            Data = Data.append(_data)
+            del _data
 
     #Apply cuts
     Data = cuts.apply_cuts(list_cuts, cuts_json_, Data)
-    
+
     #Select one candidate per event
     if OneCand:
         Data = select_cand(Data, OneCand, LumiMask=False, verbose=verbose)
         
     
-    
+    Data = Data.sort_index()
     #Split data in q2 bins
     if Bin=='Complete':
         return Data

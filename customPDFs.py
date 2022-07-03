@@ -7,6 +7,7 @@ import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
 import math
 import zfit
+import scipy
 
 version =  zfit.__version__.split('.')
 if int(version[1])>=5:
@@ -17,6 +18,7 @@ else:
 from zfit.models.dist_tfp import WrapDistribution
 from collections import OrderedDict 
 from scipy.special import binom
+from scipy.integrate import quad
 
 
 
@@ -50,7 +52,31 @@ class decayWidth(zfit.pdf.BasePDF):
         pdf += AFB*cos_l
 
         return pdf
-    
+
+    def cdf(self, x):
+        """First naive implementation of th cdf using the inherited integration"""
+
+        #Extract the values to evaluate the cdf
+        cos_l = z.unstack_x(x)
+        #Extract the limits of integration
+        limits = self.norm_range.limit1d
+
+        # Since quad takes floats, we cannot pass it a list or array
+        # Therefore we iterate over each value
+        # Takes too much time, how can we improve it?
+        cdfs = list()   
+        for val in cos_l:
+            # The output of quad is a tuple, where the first entry is the value and the second the error
+            #integral = quad(self.pdf, limits[0], val)[0]
+            if val<=limits[0]: integral=0
+            else:              integral = self.integrate([[limits[0]], [val]]).numpy()[0]
+            cdfs.append(integral)
+        #Convert it to a np array
+        cdfs = np.array(cdfs)
+        #Extract the normalization
+        norm = self.integrate([[limits[0]], [limits[1]]]).numpy()[0]
+        return cdfs/norm
+        
     
     
 class non_negative_chebyshev(zfit.pdf.BasePDF):
@@ -114,6 +140,18 @@ class bernstein(zfit.pdf.BasePDF):
             pdf += basis[i]
 
         return pdf
+################cdf 
+       # def cdf(self,x):
+        # min_=self.obs.limits[0]
+        # cdf= quad(self.pdf,min_,x)
+        # return cdf
+        
+        # def _cdf_single(self, x, *args):
+        # _a, _b = self._get_support(*args)
+        # return integrate.quad(self._pdf, _a, x, args=args)[0]
+
+    # def _cdf(self, x, *args):
+        # return self._cdfvec(x, *args)
     
 
 class truncated_bernstein(zfit.pdf.BasePDF):  

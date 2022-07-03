@@ -35,6 +35,7 @@ pretty_names = dict(
     cosA = r'$\cos \alpha$',
     signLxy = r'$L_{xy}/\sigma_{Lxy}$',
     PDL = 'PDL  [cm]',
+    ePDL = r'$\sigma_{PDL}$ [cm]',
     BMass = 'B mass  [GeV/$c^2$]',
     DiMuMass = '$\mu^+\mu^-$ mass  [GeV/$c^2$]',
     mu1_eta = '$\mu_{1}$ $\eta$',
@@ -42,9 +43,10 @@ pretty_names = dict(
     mu1_IP_sig = '$\mu_{1}$ IP/$\sigma_{IP}$',
     mu2_IP_sig = '$\mu_{2}$ IP/$\sigma_{IP}$',
     fit_eta = '$B^+ \eta$',
+    fit_k_eta = '$K^+ \eta$',
+    fit_l1_eta = r'$\mu_{1} \eta$ - (fitted)',
+    fit_l2_eta = r'$\mu_{2} \eta$ - (fitted)',
 )
-
-
 
 
 ######################################## WEIGHTED 1D HISTOGRAMS  ########################################
@@ -523,6 +525,101 @@ def textParams(minimum, ncol=2, clean=True):
 
 
 
+def textParams_from_fixed_model(model, ncol=1, clean=True):
+    texts = ['' for c in range(ncol)]
+    for indx_p, (name_p, param) in enumerate(model.params.items()):
+        
+        col = indx_p%ncol
+        text=''
+        param_value = param.value().numpy()
+        
+        r=2
+        
+        if clean or (name_p.startswith('$') and name_p.endswith("$")):
+            name = name_p
+        else:
+            name = name_p.split('_')[:-1]
+            name = '$'+'_'.join(name)+'$'
+            if name[0]!='$': name = '$'+name
+
+
+        if 'Y' in name:    
+            text+= name.split('Bin')[0]
+            if param.value().numpy()>=100000:
+                text+= ' = '+ "{:.2e}".format(param_value) 
+                text+='\n'
+            else:
+                text+= ' = '+str(int(param_value))
+                text+='\n'
+
+        else:
+            #if param_value!=0:  r = int(np.ceil(np.abs(np.log10(param_value))))
+            text+= name.split('Bin')[0]
+            text+= f' = {round(param_value,r)} ' 
+            text+='\n'
+
+        texts[col]+=text
+
+
+        
+    texts = [t.strip() for t in texts]
+        
+    return texts
+
+
+
+
+def textParams_from_model(model, ncol=1, clean=True):
+    texts = ['' for c in range(ncol)]
+    n_params = len(model.get_params())
+    
+    if n_params==0:
+        return textParams_from_fixed_model(model, ncol, clean)
+
+    for indx_p, param in enumerate(model.get_params()):
+        
+        col = indx_p%ncol
+        text=''
+        param_value = param.value().numpy()
+        
+        r=2
+        
+        if clean or (param.name.startswith('$') and param.name.endswith("$")):
+            name = param.name
+        else:
+            name = param.name.split('_')[:-1]
+            name = '$'+'_'.join(name)+'$'
+            if name[0]!='$': name = '$'+name
+
+
+        if 'Y' in name:
+            
+            text+= name.split('Bin')[0]
+            if param.value().numpy()>=100000:
+                text+= ' = '+ "{:.2e}".format(param_value) 
+                text+='\n'
+
+            else:
+                text+= ' = '+str(int(param_value))
+                text+='\n'
+
+        else:
+            #if param_value!=0:  r = int(np.ceil(np.abs(np.log10(param_value))))
+            text+= name.split('Bin')[0]
+            text+= f' = {round(param_value,r)} ' 
+            text+='\n'
+
+        texts[col]+=text
+
+
+        
+    texts = [t.strip() for t in texts]
+        
+    return texts
+
+
+
+
 
 
 
@@ -543,16 +640,7 @@ def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_e
     n_events = np.sum(h[0])
     y_err = np.sqrt(h[0]*(1-h[0]/n_events))
     y_err = np.sqrt(h[0])
-    expected_events = np.zeros_like(h[0], dtype=np.float128)
-    if integrate:
-        for i in range(len(h[0])):
-            print(f'   Bin {i}')
-            integration = pdf.integrate(limits=[h[1][i],h[1][i+1]]).numpy()[0]
-            #integration = pdf.pdf(bin_mean[i])*bin_sz
-            expected_events[i] = integration*n_events
-    else:
-        evaluate = pdf.pdf(h[1]).numpy()
-        expected_events = (evaluate[1:]+evaluate[:-1])*bin_sz*n_events/2
+    expected_events = bin_model(pdf, h[1], integrate=integrate)*n_events
         
     #pull = (h[0]-expected_events)/np.sqrt(expected_events)
     pull = (h[0]-expected_events)/np.sqrt(h[0])
@@ -573,10 +661,12 @@ def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_e
     axis.set_xlabel(xlabel)
     
     mask_ = h[0]>0
+    denominator = h[0][mask_]
+    #denominator = expected_events[mask_]
     if return_chi2:
         if return_expected_evts:    
-            return np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/expected_events[mask_]), expected_events
-        return np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/expected_events[mask_])
+            return np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/denominator), expected_events
+        return np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/denominator)
     elif return_expected_evts:
         return expected_events
     
@@ -725,6 +815,34 @@ def model_has_fracs(model):
         return False
     
 
+def bin_model(model, bins=20, integrate=False, verbose=True, center=True):
+
+    # Find out if bins is a list or an integer
+    # Missing escalating when model is extended
+    if type(bins) in [list, np.ndarray]:
+        h1 = np.array(bins)
+    else:
+        limits = model.norm_range.limit1d
+        step = (limits[1]-limits[0])/bins
+        h1   = np.array([limits[0]+i*step for i in range(bins+1)])
+    
+    binned = np.zeros(len(h1)-1, dtype=np.float128)
+    if integrate:
+        for i in range(len(h1)-1):
+            integration = model.integrate(limits=[h1[i],h1[i+1]]).numpy()[0]
+            binned[i] = integration
+            if verbose : print(f'   Bin {i}, {integration}')
+    else:
+        if center:
+            bin_center = (h1[1:]+h1[:-1])/2
+            evaluate = model.pdf(bin_center).numpy()
+            binned = evaluate*(h1[1:]-h1[:-1])
+        else:
+            evaluate = model.pdf(h1).numpy()
+            binned = (evaluate[1:]+evaluate[:-1])*(h1[1:]-h1[:-1])/2
+
+    return binned
+
 def plot_model(data, 
                pdf,
                axis=None, 
@@ -864,7 +982,7 @@ def plot_model(data,
                                 ls=ls[j],
                                 linewidth=linewidths[j],
                                 color=edgecolors[i], 
-                                label=name_,
+                                label=name_.replace(remove_string, ' ').replace('  ', ' '),
                                 zorder = zorders[i]*10)
 
     
@@ -876,8 +994,11 @@ def plot_model(data,
             elif len(_)==1: _ = _[0]
             else: _ = _[i]
             return _
-        
-        texts = textParams(print_params, params_text_opts.get('ncol', 2))
+        if type(print_params)==bool:
+            texts = textParams_from_model(pdf, params_text_opts.get('ncol', 2))
+        else:
+            texts = textParams(print_params, params_text_opts.get('ncol', 2))
+        print(texts)
         x = params_text_opts.get('x',None)
         y = params_text_opts.get('y',None)
         if 'x' in params_text_opts: del params_text_opts['x']
@@ -923,7 +1044,10 @@ def plot_model(data,
         chi2 = plot_pull(h, pdf, xlabel, axis_pulls, return_chi2=True, return_expected_evts=return_expected_evts)
         if type(chi2) in [list, tuple] : chi2, expected_events = chi2
         if print_chi2_dof:
-            dof_int = bins-len(pdf.params) if not print_params else bins-len(print_params.params)
+            n_params = len(pdf.params)
+            if print_params and type(print_params)!=bool:
+                n_params = len(print_params.params)
+            dof_int = bins-n_params
             dof_int -=1
             #print(chi2)
             tex_chi = r'$ \chi^2 /DOF$ = ' +f'{round(chi2,3)}/{dof_int} = {round(chi2/dof_int,3)}'
@@ -935,6 +1059,13 @@ def plot_model(data,
         else:       
             return h, chi2
     else:
+        if return_chi2:
+            mask_ = h[0]>0
+            binned_pdf = bin_model(pdf, h[1])
+            expected_events = binned_pdf*n_events
+            #chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/expected_events[mask_])
+            chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/h[0][mask_])
+            return h, chi2
         return h
     
     
