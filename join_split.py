@@ -44,7 +44,19 @@ def create_lumimask(df, name=None):
         good_runs = list(LumiMask.keys())
         print('procesed LumiMask')
         Good_Lumi = np.zeros(len(df), dtype=bool) #Define primero un array de Falses de la misma longitud que el dataframe
-        for i, (index, row) in enumerate(df[['run', 'luminosityBlock']].iterrows()): #Iterar por los eventos extrayend el `run` y `luminosityBlock`
+        index = df.index
+        try:
+            names = index.names 
+        except Exception as e:
+            print('Caught an Exception...')
+            print(e)
+            print('...Bye\n')
+            names = ['False']
+        if 'run' in names and 'luminosityBlock' in names:
+            run_lumi = index.to_frame()[['run', 'luminosityBlock']]
+        else:
+            run_lumi = df[['run', 'luminosityBlock']]
+        for i, (index, row) in enumerate(run_lumi.iterrows()): #Iterar por los eventos extrayend el `run` y `luminosityBlock`
             run =  row['run']
             lumi = row['luminosityBlock']
             if row['run'] in good_runs: # VERIFICAR QUE EL RUN ESTE EN EL LUMIMASK
@@ -77,8 +89,7 @@ def split_and_save(df, outputfile, bins):
         bindf = df[mask]
         pd.to_pickle(bindf, os.path.join(outputfile, f'Bin_{bin_}.pkl')) 
 
-        
-        
+           
         
 def only_split(df, bins):
     #pdb.set_trace()

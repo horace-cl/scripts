@@ -74,7 +74,7 @@ class decayWidth(zfit.pdf.BasePDF):
         #Extract the normalization
         norm = self.integrate([[limits[0]], [limits[1]]]).numpy()[0]
         return cdfs/norm
-    
+
     
     
 class non_negative_chebyshev(zfit.pdf.BasePDF):
