@@ -8,7 +8,8 @@ import zfit
 import customPDFs
 import re
 import mass_models
-import BernsteinEffy
+#import BernsteinEffy
+import zfitEffy
 import pdb
 
 path_complete = tools.analysis_path('/CompleteFit/')
