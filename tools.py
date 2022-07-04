@@ -207,9 +207,9 @@ def find_data_path(RD=True):
 
 def analysis_path(path):
     if 'HOMEANALYSIS' not in os.environ:
-        try:
+        if 'CERNBOX_HOME' in os.environ:
             HOME = os.environ['CERNBOX_HOME']
-        except KeyError:
+        else:
             print("If yu need analysis paths, make sure you have set the HOMEANALYSIS enviroment variable")
             return path
             
@@ -378,3 +378,5 @@ def consecutiveRanges(numbers):
         else:
             length += 1
     return ranges
+
+
