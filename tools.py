@@ -210,8 +210,9 @@ def analysis_path(path):
         try:
             HOME = os.environ['CERNBOX_HOME']
         except KeyError:
-            return path
             warnings.warn("If yu need analysis paths, make sure you have set the HOMEANALYSIS enviroment variable")
+            return path
+            
     else:
         HOME = os.environ['HOMEANALYSIS']
     
