@@ -3,6 +3,8 @@ import json
 import os
 import re
 from pprint import pprint
+import warnings
+
 
 
 path_to_latex = '/Users/horace/Documents/projects/CMS/LaTex/AN-21-020/Figures'
@@ -208,8 +210,8 @@ def analysis_path(path):
         try:
             HOME = os.environ['CERNBOX_HOME']
         except KeyError:
-            print('Make sure to export `HOMEANALYSIS` in bash if not in SWAN')
-            raise KeyError
+            return path
+            warnings.warn("If yu need analysis paths, make sure you have set the HOMEANALYSIS enviroment variable")
     else:
         HOME = os.environ['HOMEANALYSIS']
     
