@@ -3,6 +3,8 @@ import json
 import os
 import re
 from pprint import pprint
+import warnings
+
 
 
 path_to_latex = '/Users/horace/Documents/projects/CMS/LaTex/AN-21-020/Figures'
@@ -205,11 +207,12 @@ def find_data_path(RD=True):
 
 def analysis_path(path):
     if 'HOMEANALYSIS' not in os.environ:
-        try:
+        if 'CERNBOX_HOME' in os.environ:
             HOME = os.environ['CERNBOX_HOME']
-        except KeyError:
-            print('Make sure to export `HOMEANALYSIS` in bash if not in SWAN')
-            raise KeyError
+        else:
+            print("If yu need analysis paths, make sure you have set the HOMEANALYSIS enviroment variable")
+            return path
+            
     else:
         HOME = os.environ['HOMEANALYSIS']
     
@@ -375,3 +378,5 @@ def consecutiveRanges(numbers):
         else:
             length += 1
     return ranges
+
+
