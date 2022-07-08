@@ -23,7 +23,6 @@ from scipy.integrate import quad
 
 
 
-
 class decayWidth(zfit.pdf.BasePDF):  
     """
     Decay width of the decay:
@@ -140,19 +139,64 @@ class bernstein(zfit.pdf.BasePDF):
             pdf += basis[i]
 
         return pdf
-################cdf 
-       # def cdf(self,x):
-        # min_=self.obs.limits[0]
-        # cdf= quad(self.pdf,min_,x)
-        # return cdf
-        
-        # def _cdf_single(self, x, *args):
-        # _a, _b = self._get_support(*args)
-        # return integrate.quad(self._pdf, _a, x, args=args)[0]
 
-    # def _cdf(self, x, *args):
-        # return self._cdfvec(x, *args)
-    
+
+
+    def cdf1(self, x):
+        """First naive implementation of th cdf using the inherited integration"""
+
+        #Extract the values to evaluate the cdf
+        cos_l = z.unstack_x(x)
+        #Extract the limits of integration
+        limits = self.norm_range.limit1d
+
+        # Since quad takes floats, we cannot pass it a list or array
+        # Therefore we iterate over each value
+        # Takes too much time, how can we improve it?
+        cdfs = list()   
+        for val in cos_l:
+            # The output of quad is a tuple, where the first entry is the value and the second the error
+            #integral = quad(self.pdf, limits[0], val)[0]
+            if val<=limits[0]: integral=0
+            else:              integral = self.integrate([[limits[0]], [val]]).numpy()[0]
+            cdfs.append(integral)
+        #Convert it to a np array
+        cdfs = np.array(cdfs)
+        #Extract the normalization
+        norm = self.integrate([[limits[0]], [limits[1]]]).numpy()[0]
+        return cdfs/norm
+
+
+    def cdf(self, x):
+        """Eq. 2.5 from: https://doi.org/10.1016/j.aml.2010.11.013 """
+        x_ = z.unstack_x(x)
+        limits = self.norm_range.limit1d
+        x_T  = (x_-limits[0])/(limits[1]-limits[0])
+        deg = self.degree
+        factor = (limits[1]-limits[0])/(deg+1)
+
+        basis = dict()
+        for i in range(deg+1):
+            
+            #Obtaining the components of the integration for each basis with the formula in the reference
+            basis_2 = dict()
+            for j in range(i+1, deg+2):
+                basis_2[j]= factor*binom(deg+1,j)*tf.pow(x_T,j)*tf.pow(1-x_T,deg+1-j)
+            basis[i] = basis_2[i+1]
+
+            #For each integrated basis sum all its components
+            for j in range(i+2, deg+2):
+                basis[i] += basis_2[j]
+            basis[i] *= self.params[f'c{i}']
+
+        # Sum all components of the pdf
+        cdf = basis[0]
+        for i in range(1, deg+1):
+            cdf += basis[i]
+
+        # Since these forumlas are not normalized Bernstein polynomials, we need to normalize it
+        normalization = self.normalization([[limits[0]], [limits[1]]]) 
+        return cdf/normalization
 
 class truncated_bernstein(zfit.pdf.BasePDF):  
     """
