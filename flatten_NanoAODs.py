@@ -5,7 +5,7 @@ import numpy as np
 import uproot3 as uproot
 import os
 import best_cand
-from index_tools import create_GEN_cand_mask
+#from index_tools import create_GEN_cand_mask
 import resonance_rejection_antiRad_Veto
 from termcolor import colored, cprint
 from awkward0.array.jagged import JaggedArray
@@ -55,7 +55,89 @@ trg_branches = ['HLT_Mu7_IP4',
 
 
 
+def create_GEN_cand_mask(file, resonance=None, report=True):
+    
+    ### INDICES DE KAONES Y MUONES INVOLUCRADOS
+    ### EN EL CANDIDATO
+    kIdx  = file.array('BToKMuMu_kIdx')
+    m1Idx = file.array('BToKMuMu_l1Idx')
+    m2Idx = file.array('BToKMuMu_l2Idx')
+    
+    
+    ##Collection ::: GenPart    interesting gen particles 
+    ## https://cms-nanoaod-integration.web.cern.ch/integration/master/mc94X_doc.html#LHE
+    GenpdgID = file.array('GenPart_pdgId')
+    IdxMother = file.array('GenPart_genPartIdxMother')
+    Muon_genPartIdx = file.array('Muon_genPartIdx')
+    Track_genPartIdx = file.array('ProbeTracks_genPartIdx')
+    
+    #MUONS AND TRACKS MUST BE A GEN PARTICLE (WHO HAS A ANCESTOR)
+    onlyGENparticles = (Track_genPartIdx[kIdx]!=-1) & \
+              (Muon_genPartIdx[m1Idx]!=-1) & \
+              (Muon_genPartIdx[m2Idx]!=-1)
+    
+    #FIRST CHECK IF THE TWO MUONS HAVE GENPDGID = +-13
+    isdimuonSystem = GenpdgID[Muon_genPartIdx[m1Idx]]*GenpdgID[Muon_genPartIdx[m2Idx]]==(-13*13)
+    #TRACK MUST BE MATCHED TO A GEN  KAON ID = +-321
+    trackisKaon = abs(GenpdgID[Track_genPartIdx[kIdx]])==321
 
+    #MUONS MUST HAVE SAME MOTHER
+    mu1MotherIdx = IdxMother[Muon_genPartIdx[m1Idx]]
+    mu2MotherIdx = IdxMother[Muon_genPartIdx[m2Idx]]
+    dimuonSystem_sameMother = mu1MotherIdx == mu2MotherIdx
+    
+    #THE MOTHER OF A MUON MUST BE A Psi(2S), JPsi, or the B+
+    dimuon=0
+    if resonance:
+        if resonance.lower()=='jpsi':
+            dimuon = 443
+        elif resonance.lower() in ['psi2s', 'psiprime', 'pisp']:
+            dimuon = 100443
+        else:
+            raise NotImplementedError('POSSIBLE DIMUON SYSTEMS: `jpsi`  `psi2s`')
+    else:
+        dimuon = 521
+    dimuonSystem = abs(GenpdgID[mu1MotherIdx])==521
+    
+    
+    #THE GREATMOTHER (IF THERE IS)OF A MUON MUST BE THE SAME AS THE MOTHER 
+    #                                                          OF THE KAON
+    if resonance:
+        dimuon_kaon_same_Mother = IdxMother[mu1MotherIdx]==IdxMother[Track_genPartIdx[kIdx]]
+    else:
+        dimuon_kaon_same_Mother = mu1MotherIdx==IdxMother[Track_genPartIdx[kIdx]]
+    
+    #THE GREATMOTHER OF ANY FINAL STATE PARTICLE MUST BE A bu(B^+-)
+    is_GEN_B = abs(GenpdgID[IdxMother[Track_genPartIdx[kIdx]]])==521
+    
+    #DOES THE B CANDIDATE HAVE ANCESTORS?
+    main_B = IdxMother[IdxMother[Track_genPartIdx[kIdx]]]==-1
+    
+    #A TRUE CANDIDATE MUST SATISFY ALL OF THESE:
+    # onlyGENparticles             ----->  PARTICLES MATCHED TO A GEN PARTICLE?
+    # isdimuonSystem & trackisKaon ----->  PARTICLES MATCHED TO MUONS(+-) AND KAON?
+    # dimuonSystem_sameMother      ----->  BOTH MUONS HAVE THE SAME MOTHER?
+    # dimuon_kaon_same_Mother      ----->  DIMUON SYSTEM AND KAON, SAME MOTHER?
+    # is_GEN_B & main_B            ----->  IS THE MOTHER OF DIMUON AND KAON A B+-?  THE B^+ HAS ANCESTORS?
+    GENCandidate = (onlyGENparticles & isdimuonSystem & trackisKaon & \
+                     dimuonSystem_sameMother &  dimuon_kaon_same_Mother & is_GEN_B & main_B )
+    if report:
+        #HOW MANY CANDIDATES PER EVENT PASSED THE GENCandidate Mask???
+        BMass = file.array('BToKMuMu_fit_mass')
+        cands_event = BMass[GENCandidate].count()
+        print(f'\n\tNumber of Gen Candidates : {np.sum(cands_event)}')
+        print(f'\n\tNumber of Events         : {len(BMass)}')
+        print(f'\n\tNumber of Candidates     : {np.sum(BMass.count())}')
+        
+        if any(cands_event>1):     
+            cprint(' ----- WARNING\nMore than one candidate per event  -----', 'red', file=sys.stderr)
+    
+    return GENCandidate
+
+
+
+
+    
 def get_branch(file, branch):
     try: 
         arr = file.array(branch)
