@@ -12,8 +12,8 @@ import mass_models
 import zfitEffy
 import pdb
 
-path_complete = tools.analysis_path('/CompleteFit/')
-path_data     = tools.analysis_path('/CompleteFit/NoteV5/')
+#path_complete = tools.analysis_path('/CompleteFit/')
+#path_data     = tools.analysis_path('/CompleteFit/NoteV5/')
 
 
 def read_johnson(obs, params, name='', fixed_params=True):
