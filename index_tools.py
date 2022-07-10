@@ -652,3 +652,6 @@ def gen_dataset_binned(
         return Binned_Data
     else:
         return Binned_Data[Bin]
+
+def explore_gen_ntuples():
+    pass
