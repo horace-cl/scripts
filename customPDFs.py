@@ -161,7 +161,8 @@ class bernstein(zfit.pdf.BasePDF):
         cdfs = np.array(cdfs)
         #Extract the normalization
         norm = self.integrate([[limits[0]], [limits[1]]]).numpy()[0]
-        return cdfs/norm
+        cdf_norm=cdfs/norm
+        return cdf_norm.to_numpy()
     
 
 ################cdf 
