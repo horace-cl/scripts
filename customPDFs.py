@@ -204,36 +204,36 @@ class bernstein(zfit.pdf.BasePDF):
         return cdfs/norm
 
 
-    def cdf(self, x):
-        """Eq. 2.5 from: https://doi.org/10.1016/j.aml.2010.11.013 """
-        x_ = z.unstack_x(x)
-        limits = self.norm_range.limit1d
-        x_T  = (x_-limits[0])/(limits[1]-limits[0])
-        deg = self.degree
-        factor = (limits[1]-limits[0])/(deg+1)
+    # def cdf(self, x):
+    #     """Eq. 2.5 from: https://doi.org/10.1016/j.aml.2010.11.013 """
+    #     x_ = z.unstack_x(x)
+    #     limits = self.norm_range.limit1d
+    #     x_T  = (x_-limits[0])/(limits[1]-limits[0])
+    #     deg = self.degree
+    #     factor = (limits[1]-limits[0])/(deg+1)
 
-        basis = dict()
-        for i in range(deg+1):
+    #     basis = dict()
+    #     for i in range(deg+1):
             
-            #Obtaining the components of the integration for each basis with the formula in the reference
-            basis_2 = dict()
-            for j in range(i+1, deg+2):
-                basis_2[j]= factor*binom(deg+1,j)*tf.pow(x_T,j)*tf.pow(1-x_T,deg+1-j)
-            basis[i] = basis_2[i+1]
+    #         #Obtaining the components of the integration for each basis with the formula in the reference
+    #         basis_2 = dict()
+    #         for j in range(i+1, deg+2):
+    #             basis_2[j]= factor*binom(deg+1,j)*tf.pow(x_T,j)*tf.pow(1-x_T,deg+1-j)
+    #         basis[i] = basis_2[i+1]
 
-            #For each integrated basis sum all its components
-            for j in range(i+2, deg+2):
-                basis[i] += basis_2[j]
-            basis[i] *= self.params[f'c{i}']
+    #         #For each integrated basis sum all its components
+    #         for j in range(i+2, deg+2):
+    #             basis[i] += basis_2[j]
+    #         basis[i] *= self.params[f'c{i}']
 
-        # Sum all components of the pdf
-        cdf = basis[0]
-        for i in range(1, deg+1):
-            cdf += basis[i]
+    #     # Sum all components of the pdf
+    #     cdf = basis[0]
+    #     for i in range(1, deg+1):
+    #         cdf += basis[i]
 
-        # Since these forumlas are not normalized Bernstein polynomials, we need to normalize it
-        normalization = self.normalization([[limits[0]], [limits[1]]]) 
-        return cdf/normalization
+    #     # Since these forumlas are not normalized Bernstein polynomials, we need to normalize it
+    #     normalization = self.normalization([[limits[0]], [limits[1]]]) 
+    #     return cdf/normalization
 
 class truncated_bernstein(zfit.pdf.BasePDF):  
     """
