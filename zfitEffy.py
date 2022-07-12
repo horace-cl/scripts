@@ -119,8 +119,11 @@ def create_bernstein_models(obs, max_degree,
     up = 500,
     step = 0.00001 ,
     fixed_coef=-1,
-    retParams = False
+    ret_params = False,
+    initial_values = []
     ):
+    
+    # Need to validate if all items on the array are between up and low
 
     models = dict()
     
@@ -133,24 +136,31 @@ def create_bernstein_models(obs, max_degree,
             ini = 0.1
         return ini
     
+    coef_val = 0.1
     
     for j in range(0, max_degree):
+        
+        # if initial_values and j==(len(initial_values)-1):
+        #     coef_val = initial_values[i]
+        # else:
+        #     coef_val = ini_val(rand)
 
         if positive_constraint:
-            coefsR = [zfit.Parameter(f'{name}c^{i}_{j}{name}', 
-                                    ini_val(rand),
+            
+            coefsR = [zfit.Parameter(f'{name}_c^{i}_{j}', 
+                                     initial_values[i] if initial_values and j==(len(initial_values)-1) else ini_val(rand),
                                      0, 
                                      up, 
                                      step) 
                       if  fixed_coef!=i else 1 for i in range(j+1)]
         else:
             coefsR = [zfit.Parameter(f'{name}c^{i}_{j}{name}', 
-                                        ini_val(rand),low, up, step,)
+                                        coef_val,low, up, step,)
                     if  fixed_coef!=i else 1 for i in range(j+1)]
         if truncated: models[j] = truncated_bernstein(coefsR, obs)
         else: models[j] = bernstein(coefsR, obs)
         coefsArray.append(coefsR)
-    if retParams:
+    if ret_params:
         return models, coefsArray
     return models
     
