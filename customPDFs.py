@@ -203,6 +203,7 @@ class bernstein(zfit.pdf.BasePDF):
     def cdf(self, x):
         """Eq. 2.5 from: https://doi.org/10.1016/j.aml.2010.11.013 """
         x_ = z.unstack_x(x)
+        x_ = tf.sort(x_)
         limits = self.norm_range.limit1d
         x_T  = (x_-limits[0])/(limits[1]-limits[0])
         deg = self.degree
@@ -228,9 +229,12 @@ class bernstein(zfit.pdf.BasePDF):
             cdf += basis[i]
 
         # Since these forumlas are not normalized Bernstein polynomials, we need to normalize it
-        normalization = self.normalization([[limits[0]], [limits[1]]]) 
-        cdf_norm=cdf/normalization
-        return cdf_norm.numpy()
+
+        normalization = self.normalization([[limits[0]], [limits[1]]])
+		# It seems that the scipy and scikit-gof tools does not handle well tensors, 
+        # so we need to cast it to a numpy array 
+        cdf_normalized = cdf/normalization
+        return cdf_normalized.numpy()
 
 class truncated_bernstein(zfit.pdf.BasePDF):  
     """
