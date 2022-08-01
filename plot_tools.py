@@ -1066,15 +1066,243 @@ def plot_model(data,
             #chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/expected_events[mask_])
             chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/h[0][mask_])
             return h, chi2
-        return h
-    
-    
-    
-    
-    
+        return h 
     
     
 
+    
+    
+def plot_models(data, 
+               pdfs,
+               label_names,
+               axis=None, 
+               bins=70,  
+               return_chi2 = False, 
+               weights='none',
+               pulls=False, 
+               axis_pulls=None, 
+               plot_components=False,
+               print_params=False, 
+               print_chi2_dof=True, 
+               params_text_opts = dict(x=0.6, y=0.4, ncol=1, fontsize=15), 
+               remove_string='',
+               main_kwargs=dict(),
+               data_kwargs=dict(capsize=2, 
+                                color='black', 
+                                ms=20),
+               chi_x = 0.5, 
+               chi_y = 0.5,
+               level=1,
+               return_expected_evts = False,
+               regex='',
+               **kwargs):
+    """ Tries to be an all-in-one 1D-plotting for (~kind of) HEP style.
+        Can create pulls given a binning, and also evaluate chi2/DOF
+            - where DOF = (nbins-1)-params
+        Also can print the fitted params with its error as given by a 
+            zfit.minimizers.fitresult.FitResult
+        It incorporates many dictionaries to customize the settings.
+    
+    Parameters
+    ---------------
+    data: pd.DataFrame, list, array, Iterable
+        Data to be compared against a model
+    pdf: zfit.models
+        Any instance of a ZFIT model, if it has 
+    axis: matplotlib.axes
+        An axis to be plotted the figure. 
+            Plotting with no axis is TO BE IMPLEMENTED
+    main_kwargs: dict
+        Arguments to be passed to the Top model,
+        dict(fill=True) : create a fill plot instead of a simple plot 
+    Returns
+    ---------------
+    Data histogram: (np.array, np.array)
+        Output from np.histogram of Data
+    chi2: float
+        chi2 evaluated from the binning and taking into account bins with counts>0
+    """
+    if not axis:
+        fig,axis = plt.subplots()
+    try:
+        pdfs[0].norm_range.spaces
+        limits = [pdfs[0].norm_range.spaces[0].lower.flatten()[0],
+                  pdfs[0].norm_range.spaces[-1].upper.flatten()[0]
+        ]
+    except AttributeError:
+        limits = pdfs[0].norm_range.limit1d
+    if np.all(weights=='none'):
+        weights = np.ones_like(data)
+    h = np.histogram(data, bins=bins, range=limits, weights=weights)
+    bin_mean = (h[1][1:]+h[1][:-1])/2
+    bin_size = h[1][1]-h[1][0]
+    n_events = np.sum(h[0])
+    #scale_ = bin_size*n_events
+    scale = np.sum(np.diff(h[1])*h[0])
+    y_err = np.sqrt(h[0]*(1-h[0]/n_events))
+    mask_ = h[0]>0
+    
+    axis.errorbar(bin_mean[mask_], 
+                  h[0][mask_], 
+                  xerr=bin_size/2, 
+                  yerr=y_err[mask_], 
+                  label='Data', 
+                  ls='none', 
+                  **data_kwargs
+                 )
+    
+
+    main_kw = deepcopy(main_kwargs) 
+    if kwargs.get('MainColor', False):
+        print(main_kw)
+        if 'color' in main_kw:
+            raise ValueError('color (MainColor) already specified')
+        else:
+            main_kw['color'] = kwargs['MainColor']
+            
+    # Here is where the pdf magic happens
+
+    x = np.linspace(limits[0], limits[1], 1000)
+    for idx, pdf in enumerate(pdfs):
+        model_name = kwargs.get('pdf_name', pdf.name)
+        if 'fill' in main_kw:
+            del main_kw['fill']
+            axis.fill(x, pdf.pdf(x)*scale, zorder=1000,
+                **main_kw, label=label_names[idx])
+        else:
+            axis.plot(x, pdf.pdf(x)*scale, zorder=1000,
+                **main_kw,  label=label_names[idx])
+    
+        #if type(pdf) != zfit.pdf.SumPDF and plot_components:
+        #    print('NOT COMPONENTS')
+        try: 
+            n_models = len(pdf.models)
+        except Exception as e: 
+            print(e)
+            n_models = -1
+        if plot_components and n_models <= 0:
+            print('NOT COMPONENTS')
+            raise NotImplementedError('PDF has no componets')
+
+        elif plot_components:
+            hatces     = ['', '', '--']
+            facecolors = ['lightcoral', 'lightblue', 'palegreen']
+            edgecolors = ['orangered' , 'dodgerblue', 'darkgreen']
+            zorders    = [50,20,5] 
+            for i in range(len(pdf.pdfs)):
+                model = pdf.pdfs[i]
+                if model_has_fracs(pdf): frac = pdf.fracs[i]
+                else: frac = 1
+                if 'decay' in model.name.lower(): name = 'Angular Signal'
+                else : name=model.name.replace('_extended', '')
+                axis.fill_between(x, model.pdf(x)*scale*frac, alpha=0.6,
+                        facecolor=facecolors[i], hatch=hatces[i], 
+                        edgecolor=edgecolors[i], label=label_names[idx],
+                        zorder = zorders[i])
+                #level=2
+                if model_has_pdfs(model) and level==2 and regex in model.name.lower():
+                    ls = ['--', ':', '-.', '--', ':', '.-']
+                    linewidths = [1.5, 1.5, 1.5, 3, 3, 3,]
+                    #print(model.name, 'MODELS')
+                    for j in range(len(model.pdfs)):
+                        submodel = model.pdfs[j]
+                        if model_has_fracs(model): frac_ = model.fracs[j]
+                        else: frac_ = 1
+                        if 'decay' in submodel.name.lower(): name_ = 'Angular Signal'
+                        else : name_=submodel.name.replace('_extended', '')
+                        axis.plot(x, submodel.pdf(x)*scale*frac*frac_, 
+                                    ls=ls[j],
+                                    linewidth=linewidths[j],
+                                    color=edgecolors[i], 
+                                    label=name_.replace(remove_string, ' ').replace('  ', ' '),
+                                    zorder = zorders[i]*10)
+
+    
+        if print_params:
+
+            def get_opt_indx(_, i):
+                if _ is None: _ = 0.5
+                elif type(_)==float: _=_
+                elif len(_)==1: _ = _[0]
+                else: _ = _[i]
+                return _
+            if type(print_params)==bool:
+                texts = textParams_from_model(pdf, params_text_opts.get('ncol', 2))
+            else:
+                texts = textParams(print_params, params_text_opts.get('ncol', 2))
+            print(texts)
+            x = params_text_opts.get('x',None)
+            y = params_text_opts.get('y',None)
+            if 'x' in params_text_opts: del params_text_opts['x']
+            if 'y' in params_text_opts: del params_text_opts['y']
+            if 'ncol' in params_text_opts: del params_text_opts['ncol']
+
+            for i, text in enumerate(texts):
+                if remove_string: text = text.replace(remove_string, '')
+                x_ = get_opt_indx(x, i)
+                y_ = get_opt_indx(y, i)
+                axis.text(x_, y_, text, 
+                          transform = axis.transAxes, **params_text_opts
+                         )
+
+    
+    # if 'log' in kwargs:
+    #     axis.set_yscale('log')
+    #     axis.set_ylim(0, np.max(h[0])*20)
+    # else:
+    #     axis.set_ylim(0, np.max(h[0])*1.3)
+    # axis.set_xlim(limits)
+    # axis.set_ylabel('Events / '+str(round(bin_size, kwargs.get('round_binsz', 4))))
+    # axis.legend(fontsize=kwargs.get('fontsize', 12), 
+    #             loc=kwargs.get('loc', 1), 
+    #             frameon=kwargs.get('frameon', True), 
+    #             framealpha=kwargs.get('framealpha', 0.8), 
+    #             ncol=kwargs.get('ncol', 1))
+    # model_obs = pdf.obs
+    # if type(model_obs)==tuple : model_obs = model_obs[0]
+    # xlabel = kwargs.get('xlabel', model_obs)
+    # if not pulls or not axis_pulls:
+    #     axis.set_xlabel(xlabel)
+    # else:
+    #     axis.set_xticklabels([])
+    
+    #print('formationg')
+    #axis.ticklabel_format(axis="x", style="scientific", scilimits=(0,0))
+    
+    
+    # if pulls and not axis_pulls:
+    #     raise NotFoundError('You need to pass another axis for the pulls ')
+    # elif pulls:
+    #     chi2 = plot_pull(h, pdf, xlabel, axis_pulls, return_chi2=True, return_expected_evts=return_expected_evts)
+    #     if type(chi2) in [list, tuple] : chi2, expected_events = chi2
+    #     if print_chi2_dof:
+    #         n_params = len(pdf.params)
+    #         if print_params and type(print_params)!=bool:
+    #             n_params = len(print_params.params)
+    #         dof_int = bins-n_params
+    #         dof_int -=1
+    #         #print(chi2)
+    #         tex_chi = r'$ \chi^2 /DOF$ = ' +f'{round(chi2,3)}/{dof_int} = {round(chi2/dof_int,3)}'
+    #         #chi_x, chi_y = kwargs.get('chi_x', 0.5),  kwargs.get('chi_y', 0.5)
+    #         axis.text( chi_x, chi_y , tex_chi, va='bottom', ha=kwargs.get('ha_chi', 'left'),
+    #                   fontsize=kwargs.get('fontsize_chi2', 18), zorder=kwargs.get('chi_zorder', 100), transform = axis.transAxes)
+    #     if return_expected_evts:
+    #         return h, chi2, expected_events
+    #     else:       
+    #         return h, chi2
+    # else:
+    #     if return_chi2:
+    #         mask_ = h[0]>0
+    #         binned_pdf = bin_model(pdf, h[1])
+    #         expected_events = binned_pdf*n_events
+    #         #chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/expected_events[mask_])
+    #         chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/h[0][mask_])
+    #         return h, chi2
+    #     return h
+    
+    
+    
+    
     
     
 def make_error_boxes(ax, xdata, ydata, xerror, yerror, facecolor='r',
