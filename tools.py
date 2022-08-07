@@ -84,6 +84,12 @@ def crate_json(minimum, pdf, output_dir, name):
 
         
 def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pdf=''):
+    """Produce a dictionary with all information from both the pdf and the minimum objects. 
+    If information is repeated we take the minimum's value
+    TODO - I think both substring should in fact be the same
+    The idea of the substring is to remove unnecesary strings on the pdfs name
+     e.g. if params are named as c_x^y_BIN7, the unncesesary string _BIN7 could be removed
+    """
     out_dict = dict()
 
     for param in pdf.get_params():
@@ -129,7 +135,7 @@ def crate_json_composed(minimum, pdf, output_dir, name='', substring_minimum='',
     if not name: name='Params.json'
     if not name.endswith('.json'): name+='.json'
     with open(os.path.join(output_dir, name), 'w+') as jj:
-        json.dump(out_dict, jj, indent=4)
+        json.dump(out_dict, jj, indent=4, allow_nan=True)
     return out_dict
         
 
