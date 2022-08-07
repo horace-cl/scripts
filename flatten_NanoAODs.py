@@ -542,7 +542,7 @@ if __name__ == '__main__':
     #String for cuts - hardcoded!!
     if args.c: 
         import cuts
-        json_cuts = cuts.read_cuts_json(int(args.c))
+        json_cuts = cuts.read_cuts_json(args.c)
         if 'all' in args.w:
             list_cuts = ['resonance_rejection', 
                          'anti_radiation_veto',
