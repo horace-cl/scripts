@@ -19,7 +19,8 @@ from zfit.models.dist_tfp import WrapDistribution
 from collections import OrderedDict 
 from scipy.special import binom
 from scipy.integrate import quad
-
+import re
+import json
 
 
 
@@ -201,6 +202,40 @@ class bernstein(zfit.pdf.BasePDF):
         # so we need to cast it to a numpy array 
         cdf_normalized = cdf/normalization
         return cdf_normalized.numpy()
+
+def get_degree(coefs_names, type_=''):
+    search_degree = [re.search(r'_[0-9]+', coef) for coef in coefs_names]
+    search_coef_n = [re.search(r'\^[0-9]+_', coef.replace(type_, '')) for coef in coefs_names]
+    degrees = [int(match.group(0).replace('_', '')) for match in search_degree]
+    coefs   = [int(match.group(0).replace('_', '').replace(r'^', '')) for match in search_coef_n]
+    if len(set(coefs))==1 and degrees[0]!=0:
+        search_coef_n = [re.search(r'[0-9]+_', coef) for coef in coefs_names]
+        coefs   = [int(match.group(1).replace('_', '')) for match in search_coef_n]  
+          
+    if not len(set(degrees))==1:
+        raise NotImplementedError(f'More than one degree in yur coefs!\n{coefs_names}\nCheck them')
+    
+    names_ = np.array(coefs_names, dtype='O')
+    return degrees[0], names_[np.array(coefs).argsort()]
+
+def read_single_berntsein_polynomial(obs, params, name='', fixed_params=True):
+
+    if type(params)==str:
+        with open(params, 'r') as jj: params = json.load(jj)
+        
+    coefs_names = [k for k in params.keys() if 'c^' in k] 
+    deg, ordered_coefs = get_degree(coefs_names)
+    if not fixed_params:
+        coefs = [zfit.Parameter(f'{name}c^{i}_{deg}', params[c]['value']) for i, c in enumerate(ordered_coefs)]
+        return bernstein(coefs, obs, name)
+    else:
+        coefs = [ params[c]['value'] for c in ordered_coefs]
+        return bernstein(coefs, obs, name)
+    
+
+
+
+
 
 class truncated_bernstein(zfit.pdf.BasePDF):  
     """
