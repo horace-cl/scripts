@@ -186,14 +186,15 @@ def create_skim(file,
     pd.DataFrame
         A data frame with multiindex and all the columns defined with the arguments
     """
+    branches_ = [b.replace('BToKMuMu', regex) for b in branches]
 
     #TODO: CHECK THAT BRANCHES CONTAIN REGEX AND ARE INSIDE FILE
-    table = file.arrays(indexes+branches, outputtype=pd.DataFrame, flatten=True,)
+    table = file.arrays(indexes+branches_, outputtype=pd.DataFrame, flatten=True,)
     table.columns = [c.replace(regex+'_', '') for c in table.columns]
     
     if mu_branches:
-        mu1_indx = file.array('BToKMuMu_l1Idx')
-        mu2_indx = file.array('BToKMuMu_l2Idx')
+        mu1_indx = file.array(f'{regex}_l1Idx')
+        mu2_indx = file.array(f'{regex}_l2Idx')
         mu_branches_clean = [b if b.startswith('Muon_') else 'Muon_'+b for b in mu_branches]
         muon_table = file.arrays(mu_branches_clean, namedecode='utf-8')
         reshaped_table = dict()
@@ -228,6 +229,7 @@ def create_skim(file,
         table = table.set_index(indexes)
         
     if isMC:
+        #print(isMC)
         gen_mask = create_GEN_cand_mask(file, 
                             resonance=isMC if isMC in ['JPSI', 'PSI2S'] else None,
                             report=verbose)
@@ -244,7 +246,7 @@ def create_skim(file,
             trg_branches_ = [t for t in trg_branches if trigTables in t]
         else:
             trg_branches_ = trg_branches
-        trg = pd.DataFrame(expand_simple_branches(file, trg_branches_, file.array('nBToKMuMu')), index=table.index)
+        trg = pd.DataFrame(expand_simple_branches(file, trg_branches_, file.array(f'n{regex}')), index=table.index)
         table = table.join(trg)
 
     if softMuons:
@@ -445,12 +447,17 @@ def select_cand(df, var, LumiMask=True, verbose=False):
 
 
 
-def read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file):
+def read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file, 
+                        regex='BToKMuMu',
+                        branches = b_branches, 
+                        branches_skim=b_branches):
     #If Data is MC I read from NanoAOD
     #Else RealData is already in pd.DataFrames
+
     if 'RD' in kind and '*' not in path:    
         Data = pd.read_pickle(path)
         Data = cuts.apply_cuts(list_cuts, cuts_json_, Data)
+
     elif 'RD' in kind and 'pkl' in path:
         Data = pd.DataFrame()
         files = glob(path)
@@ -465,15 +472,19 @@ def read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branche
                     file_pkl = file_pkl.sample(**sample_dict)
                     print(sample_dict)
                     print(len(file_pkl), '\n')
-            Data = Data.append(file_pkl)
+            if len(branches)<len(b_branches): 
+                Data = Data.append(file_pkl[branches])    
+            else: 
+                Data = Data.append(file_pkl)   
+
     else:
         Data = pd.DataFrame() 
         for f in glob(path):
             if f.endswith('root'):
                 f_ = uproot.open(f)['Events']
                 skim_ = create_skim(f_, ['run', 'luminosityBlock', 'event'], 
-                            'BToKMuMu', isMC=kind, verbose=verbose, run=run,
-                            mu_branches=mu_branches)
+                            regex, isMC=kind if kind!='RD' else False, verbose=verbose, run=run,
+                            mu_branches=mu_branches, softMuons=False, branches=branches_skim)
                 del f_
             else:
                 skim_ = pd.read_pickle(f)
@@ -483,8 +494,11 @@ def read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branche
                 print(len(skim_))
                 skim_ = skim_.sample(**sample_dict)
                 print(sample_dict)
-                print(len(skim_), '\n')
-            Data = Data.append(skim_)
+                print(len(skim_), '\n')            
+            if len(branches)<len(b_branches): 
+                Data = Data.append(skim_[branches])    
+            else: 
+                Data = Data.append(skim_)    
             del skim_
     return Data
 
@@ -510,6 +524,9 @@ def dataset_binned(kind='RD',
                    mu_branches=['HLT*'],
                    sample_dict=None,
                    apply_cuts_per_file=True,
+                   regex='BToKMuMu',
+                   branches = b_branches,
+                   branches_skim = b_branches,
                    **kwargs
                   ):
     
@@ -518,7 +535,11 @@ def dataset_binned(kind='RD',
     
     
     
-    cuts_json_ = cuts.read_cuts_json(cuts_json)
+    if type(cuts_json)==dict:
+        from copy import deepcopy
+        cuts_json_ = deepcopy(cuts_json)
+    else:
+        cuts_json_ = cuts.read_cuts_json(cuts_json)
     bins_json_ = join_split.read_json(bins_json)
     
     default_paths = dict(
@@ -551,12 +572,16 @@ def dataset_binned(kind='RD',
 
     #Read Data
     if type(path)==str:
-        Data = read_NanoAOD_PKL(tools.analysis_path(path), list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file)
+        #print(f'Reading data from path: {path}')
+        if glob(path):
+            Data = read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim)
+        else:
+            Data = read_NanoAOD_PKL(tools.analysis_path(path), list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim)
     else:
         Data = pd.DataFrame()
         if not run: run=1
         for indx, path_value in enumerate(path):
-            _data = read_NanoAOD_PKL(tools.analysis_path(path_value), list_cuts, cuts_json_, kind, verbose, run+indx, mu_branches, sample_dict, apply_cuts_per_file)
+            _data = read_NanoAOD_PKL(tools.analysis_path(path_value), list_cuts, cuts_json_, kind, verbose, run+indx, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim)
             print(_data)
             Data = Data.append(_data)
             del _data
