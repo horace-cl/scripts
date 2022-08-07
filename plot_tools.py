@@ -908,7 +908,10 @@ def plot_model(data,
     bin_size = h[1][1]-h[1][0]
     n_events = np.sum(h[0])
     #scale_ = bin_size*n_events
-    scale = np.sum(np.diff(h[1])*h[0])
+    if pdf.is_extended:
+        scale = pdf.get_yield().value().numpy()*bin_size
+    else:
+        scale = np.sum(np.diff(h[1])*h[0])
     y_err = np.sqrt(h[0]*(1-h[0]/n_events))
     mask_ = h[0]>0
     
@@ -1069,7 +1072,26 @@ def plot_model(data,
         return h
     
     
+def model(pdf, scaling=1, axis=None, **kwargs):
     
+    if not axis:
+        fig,axis = plt.subplots()
+        
+    try:
+        pdf.norm_range.spaces
+        limits = [pdf.norm_range.spaces[0].lower.flatten()[0],
+                  pdf.norm_range.spaces[-1].upper.flatten()[0]
+        ]
+    except AttributeError:
+        limits = pdf.norm_range.limit1d
+    x_np = np.linspace(limits[0], limits[1], 1000)
+
+    if type(scaling)==tuple:
+        scaling_ = np.sum(scaling[0]*np.diff(scaling[1]))
+    else:
+        scaling_ = scaling
+    
+    axis.plot(x_np, pdf.pdf(x_np)*scaling_, label=pdf.name, **kwargs)
     
     
     
