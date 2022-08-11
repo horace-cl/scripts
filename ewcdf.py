@@ -1,7 +1,26 @@
 #function to create a sampler
-def distribution_sampler(model,data):    
+#def distribution_sampler(model,data):    
+#    angular_data=data.cosThetaKMu.to_numpy()
+#    sampler=model.create_sampler(len(angular_data))
+#    sampler_hist=[]
+#    for i in range (0,10000):
+#        sampler.resample()
+#        sampler_hist.append(sampler.to_pandas())
+#    statistic_sampler=[]
+#    for i in range (0,10000):
+#        statistic_sampler.append(ks_test(sampler_hist[i], model).statistic)
+#    return statistic_sampler
+
+
+#function to create a sampler, n_eff
+def distribution_sampler(model,data):
+    #number of events 
+    squares=data.totalW.pow(2)
+    sum=data.totalW.sum()
+    sum_squares=squares.sum()
+    n_eff=sum**2/sum_squares  
     angular_data=data.cosThetaKMu.to_numpy()
-    sampler=model.create_sampler(len(angular_data))
+    sampler=model.create_sampler(n_eff) #cambiar el numero de eventos a la formula de eficiencia con los pesos
     sampler_hist=[]
     for i in range (0,10000):
         sampler.resample()
@@ -10,6 +29,7 @@ def distribution_sampler(model,data):
     for i in range (0,10000):
         statistic_sampler.append(ks_test(sampler_hist[i], model).statistic)
     return statistic_sampler
+
 #function to plot the sampler and statistic line 
 def histogram_distribution(distribution,statistic):
     histogram=(plt.hist(distribution,bins=50,color='teal'), 
