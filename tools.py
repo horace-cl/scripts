@@ -98,7 +98,7 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
         param_name_clean = param.name.replace(substring_pdf, '')
         for param_min, result in minimum.params.items():
             key = 'minuit_hesse' if 'minuit_hesse' in result else 'hesse_np'
-            if param_name_clean in param_min.name:
+            if (param_name_clean in param_min.name) or (param.name in param_min.name):
                 out_dict[param_name_clean] = dict(value=result['value'], 
                                                   hesse=result.get(key, {'error':-1})['error'])
                 fitted = True

@@ -381,7 +381,7 @@ if __name__ == '__main__':
     parser.add_argument('-wn',
                        action='store',
                        default='none', 
-                       help='which cuts NOT to apply, if more than 1, must be separated by _')
+                       help='which cuts NOT to apply, if more than 1, must be separated by __')
 
     
     parser.add_argument('--inputdir',
@@ -581,7 +581,7 @@ if __name__ == '__main__':
 
     #Remove cuts from the list_cuts
     if args.wn!='none':
-        for val in args.wn.split('_'):
+        for val in args.wn.split('__'):
             list_cuts.remove(val)
 
 

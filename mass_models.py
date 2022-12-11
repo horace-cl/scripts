@@ -78,7 +78,7 @@ def create_exp_back(obs, name=''):
     return exponential
 
 def create_gauss_exp_back(obs, name=''):
-    mu     = zfit.Parameter(r'$\mu_B$'+f'{name}', 4.9, 4, 5.1)
+    mu     = zfit.Parameter(r'$\mu_B$'+f'{name}', 4.9, 3.5, 5.1)
     sigma  = zfit.Parameter(r'$\sigma_B$'+f'{name}', 0.2, 0.005, 1)
     gauss  = zfit.pdf.Gauss(mu = mu, sigma=sigma, obs = obs, name='gauss_mass_back')        
     lambda_     = zfit.Parameter(r'$\lambda_B$'+f'{name}', -2)
@@ -90,12 +90,12 @@ def create_gauss_exp_back(obs, name=''):
     return model
 
 def create_errf_exp_back(obs, name=''):
-    mu     = zfit.Parameter(r'$\mu_B$'+f'{name}', 4.9, 4, 5.1)
+    mu     = zfit.Parameter(r'$\mu_B$'+f'{name}', 4.9, 4, 6)
     sigma  = zfit.Parameter(r'$\sigma_B$'+f'{name}', 0.2, 0.05, 1)
     errff  = customPDFs.errf(mu = mu, 
                              sigma=sigma, 
                              obs = obs, 
-                             name='gauss_mass_back')        
+                             name='errf_mass_back')        
     lambda_     = zfit.Parameter(r'$\lambda_B$'+f'{name}', -2)
     exponential = zfit.pdf.Exponential(lambda_=lambda_, obs = obs, name='exp_mass_back')
     frac = zfit.Parameter(r'frac_mass'+f'{name}', 0.1, 0, 1.0, 0.001)
@@ -104,6 +104,20 @@ def create_errf_exp_back(obs, name=''):
                         obs = obs, name = 'mass_back')
     return model
 
+def create_atan_exp_back(obs, name=''):
+    mu     = zfit.Parameter(r'$\mu_B$'+f'{name}', 4.9, 4, 5.1)
+    sigma  = zfit.Parameter(r'$\sigma_B$'+f'{name}', 0.2, 0.05, 1)
+    atan_  = customPDFs.atanTF(mu = mu, 
+                             sigma=sigma, 
+                             obs = obs, 
+                             name='atan_mass_back')        
+    lambda_     = zfit.Parameter(r'$\lambda_B$'+f'{name}', -2)
+    exponential = zfit.pdf.Exponential(lambda_=lambda_, obs = obs, name='exp_mass_back')
+    frac = zfit.Parameter(r'frac_mass'+f'{name}', 0.1, 0, 1.0, 0.001)
+    
+    model = zfit.pdf.SumPDF([atan_, exponential], fracs=frac,
+                        obs = obs, name = 'mass_back')
+    return model
 
 
 def create_background_model(obs, name='', kind='GaussExp'):
@@ -115,6 +129,8 @@ def create_background_model(obs, name='', kind='GaussExp'):
     elif kind=='GaussExp':
         return create_gauss_exp_back(obs, name=name)
     elif kind=='ErrfExp':
+        return create_errf_exp_back(obs, name=name)
+    elif kind=='aTanExp':
         return create_errf_exp_back(obs, name=name)
     else:
         raise NotImplementedError

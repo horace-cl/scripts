@@ -107,6 +107,9 @@ def create_table(file, indexes, regex, subentry=True, remove_sufix=False, old_na
     if subentry and 'subentry' in table.index.names:
         table = table.reset_index(level='subentry')
         table = table.set_index(indexes+['subentry'])
+    else:
+        table = table.reset_index(level='subentry')
+        table = table.set_index(indexes)
     if remove_sufix:
         table.columns = [c.replace(regex+'_', '') for c in table.columns]
     if old_naming and remove_sufix:
@@ -301,7 +304,7 @@ def create_GEN_cand_mask(file, resonance=None, report=True):
             raise NotImplementedError('POSSIBLE DIMUON SYSTEMS: `jpsi`  `psi2s`')
     else:
         dimuon = 521
-    dimuonSystem = abs(GenpdgID[mu1MotherIdx])==521
+    dimuonSystem = abs(GenpdgID[mu1MotherIdx])==dimuon
     
     
     #THE GREATMOTHER (IF THERE IS)OF A MUON MUST BE THE SAME AS THE MOTHER 
@@ -324,7 +327,7 @@ def create_GEN_cand_mask(file, resonance=None, report=True):
     # dimuon_kaon_same_Mother      ----->  DIMUON SYSTEM AND KAON, SAME MOTHER?
     # is_GEN_B & main_B            ----->  IS THE MOTHER OF DIMUON AND KAON A B+-?  THE B^+ HAS ANCESTORS?
     GENCandidate = (onlyGENparticles & isdimuonSystem & trackisKaon & \
-                     dimuonSystem_sameMother &  dimuon_kaon_same_Mother & is_GEN_B & main_B )
+                     dimuonSystem_sameMother &  dimuon_kaon_same_Mother & is_GEN_B )#& main_B )
     if report:
         #HOW MANY CANDIDATES PER EVENT PASSED THE GENCandidate Mask???
         BMass = file.array('BToKMuMu_fit_mass')
@@ -551,12 +554,23 @@ def dataset_binned(kind='RD',
                         #'DataSelection/NanoAOD/BTOSLL/TrgNanoAODs/BParkNANO_mc_private_*.root',   # --> 2nd Private (TrgNano) Not Working, Missing Variables!
                         'DataSelection/NanoAOD/BTOSLL/FiltersMarch22/BParkNANO_mc_private_*.root', # --> 3rd Private (Filters)
                         ],
+                BSLLC=[ 'OfficialMC/BuToKMuMu_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen'              ## --> Official <-- ##
+                        '/OfficialMC_BuToKMuMu_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen___2022-01-27_15_37' #############
+                        '/220127_143924/0000/BParkNANO_mc_MonteCarlo_*.root',                      ######################
+                        'DataSelection/NanoAOD/BTOSLL/Aug21C/BParkNANO_mc_private_*.root',          # --> 1st Private 
+                        #'DataSelection/NanoAOD/BTOSLL/TrgNanoAODs/BParkNANO_mc_private_*.root',   # --> 2nd Private (TrgNano) Not Working, Missing Variables!
+                        'DataSelection/NanoAOD/BTOSLL/FiltersMarch22C/BParkNANO_mc_private_*.root', # --> 3rd Private (Filters)
+                        ],
                  BSLL_priv='DataSelection/NanoAOD/BTOSLL/Aug21/BParkNANO_mc_private_*.root',
                  BSLL_filters='DataSelection/NanoAOD/BTOSLL/FiltersMarch22/BParkNANO_mc_private_*.root', 
                  PHSP=['DataSelection/NanoAOD/PHSP/Aug21/BParkNANO_mc_private_*.root',
                        'DataSelection/NanoAOD/PHSP/Dec21/BParkNANO_mc_private_*.root',
                        'DataSelection/NanoAOD/PHSP/Filters1/BParkNANO_mc_private_*.root',
                        'DataSelection/NanoAOD/PHSP/Jan22/BParkNANO_mc_private_*.root'],
+                 PHSPC=['DataSelection/NanoAOD/PHSP/Aug22/BParkNANO_mc_private_*.root',
+                       'DataSelection/NanoAOD/PHSP/Dec21C/BParkNANO_mc_private_*.root',
+                       'DataSelection/NanoAOD/PHSP/Filters1C/BParkNANO_mc_private_*.root',
+                       'DataSelection/NanoAOD/PHSP/Jan22C/BParkNANO_mc_private_*.root'],
                  PHSP_priv='DataSelection/NanoAOD/PHSP/Aug21/BParkNANO_mc_private_*.root',
                  RD_5per='DataSelection/DataSets/5percent/*.pkl',
                  RD_Resonances='DataSelection/DataSets/Resonances/*.pkl',
@@ -582,7 +596,7 @@ def dataset_binned(kind='RD',
         if not run: run=1
         for indx, path_value in enumerate(path):
             _data = read_NanoAOD_PKL(tools.analysis_path(path_value), list_cuts, cuts_json_, kind, verbose, run+indx, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim)
-            print(_data)
+            #print(_data)
             Data = Data.append(_data)
             del _data
 
@@ -625,7 +639,12 @@ def create_gen_df(ntuple,
 
     Kp4 = ntuple.array('K_p4')
     Kpt, Keta, Kphi= Kp4.pt, Kp4.eta, Kp4.phi
-    
+
+    gammap4 = ntuple.array('Others_p4')
+    gammapt = gammap4.pt
+
+    n_daughters = ntuple.array('number_daughters')
+
     Dimuonp4 = Mu1p4+Mu2p4
     
     run, lumi, event = ntuple.arrays(['run', 'luminosityBlock', 'event'], outputtype=tuple)
@@ -637,6 +656,7 @@ def create_gen_df(ntuple,
                     mu2pt= Mu2pt, mu2eta= Mu2eta, mu2phi= Mu2phi,
                     kpt=Kpt, keta=Keta, kphi=Kphi,
                     cosThetaKMu = cosThetaKMu, DiMuMass = Dimuonp4.mass,
+                    gammapt = gammapt, n_daughters=n_daughters,
                     run = run, luminositiBlock = lumi,  event = event), )
     df = df.set_index(['run', 'luminositiBlock', 'event'])
     

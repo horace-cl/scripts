@@ -108,7 +108,7 @@ class SLSQP(BaseMinimizer):
                               loss = loss, minimizer=minimize,
                               params =params,
                               edm = -1.0, fmin = minimizer.fun,
-                              status =minimizer.status,
+                              status = minimizer.status,
                               converged = minimizer.success,
                               info = dict(minimizer) )
         

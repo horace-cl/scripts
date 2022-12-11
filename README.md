@@ -6,7 +6,5 @@ Please add this directory to the python path
 For bash, in the scripts directory do:
 export PYTHONPATH="${PYTHONPATH}:${PWD}"
 
-For zsh, do:
- ----
 
 You can also modify the .bashrc or .zshrc instead of doing this export everytime

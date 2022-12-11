@@ -20,10 +20,18 @@ import plot_tools
 from customPDFs import bernstein, truncated_bernstein, non_negative_chebyshev
 from random import random
 import pdb
+from scipy import stats
 
 
 
-
+def get_f_test(RSS1, n_param1, RSS2, n_param2, nbins):
+    dof1 = n_param2-n_param1
+    dof2 = nbins-n_param2
+    numerator = (RSS1-RSS2)/dof1
+    denominator = RSS2/dof2
+    F_statistic = numerator/denominator
+    F_pval = 1-stats.f.cdf(float(F_statistic), dof1, dof2 )
+    return float(F_statistic), float(F_pval)
 
 
 def create_non_neg_chebyshev_models(
@@ -183,19 +191,19 @@ def minimize_models(data, models, obs, hesse=True, return_nlls=False, weights='n
     for deg, model in models.items():
         #print(deg)
         nlls[deg] = zfit.loss.UnbinnedNLL(model,dataZ)
-        any_param_floating = any(list([p.floating for p in model.params.values()]))
-        if any_param_floating:
-            minuit = zfit.minimize.Minuit()
-            minimize = minuit.minimize(nlls[deg])
-            print(minimize)
-            if hesse:
-                try:
-                    minimize.hesse() 
-                except Exception as e: print(e)
-            minimums[deg] = minimize
-            zfit.util.cache.clear_graph_cache()
-        else:
-            minimums[deg] = None
+        #any_param_floating = any(list([p.floating for p in model.params.values()]))
+        #if any_param_floating:
+        minuit = zfit.minimize.Minuit()
+        minimize = minuit.minimize(nlls[deg])
+        print(minimize)
+        if hesse:
+            try:
+                minimize.hesse() 
+            except Exception as e: print(e)
+        minimums[deg] = minimize
+        zfit.util.cache.clear_graph_cache()
+        # else:
+        #     minimums[deg] = None
     if return_nlls:
         return minimums, nlls
     else:
@@ -416,11 +424,516 @@ def get_best_chi2_model(data, models, obs, nbins, name,
             return new_model, best_deg_minimum, minimums
     return new_model
 
+
+
+
+
+
+
+def get_best_Ftest_model_(data, models, obs, nbins, name, 
+                        refit=False, return_new_model=True,
+                        weights = 'none', return_minimum=False,
+                        family='bernstein', display=True, out_dir=None,
+                        return_chi2s = False,
+                        strategy='close1',):
+    
+    #Initialize parameters
+    for deg, model in models.items():
+        tools.init_params_c(model, family)
+
+
+    if refit:
+        minimums  =  minimize_models_refit(data, models, obs, weights=weights)
+    else:
+        minimums  =  minimize_models(data, models, obs, weights=weights)
+
+    
+
+    # best_model, best_deg,  chi2_list, chi2_dof = evaluate_best_chi2(data, models, minimums,
+    #                                           nbins=20, 
+    #                                           weights=weights, 
+    #                                           display=display,
+    #                                           strategy=strategy,
+    #                                           out_dir=out_dir)
+    best_model, best_deg,  chi2_list, chi2_dof = evaluate_best_Ftest(data, models, minimums,
+                                              nbins=20, 
+                                              weights=weights, 
+                                              display=display,
+                                              strategy=strategy,
+                                              out_dir=out_dir)
+    print(best_deg)
+
+    best_deg_minimum = minimums[best_deg]
+    if type(best_deg_minimum)==list: 
+        best_deg_minimum = best_deg_minimum[-1]
+    
+    if not return_new_model:
+        if return_minimum:
+            return best_model, best_deg_minimum, minimums
+        return best_model
+    
+    if family=='bernstein':
+        coefsR = list()
+        for i in range(best_deg+1):
+            name_ = f'c^{i}_{best_deg}'
+            best_par = tools.find_param_substring(best_model, name_)
+            best_val = 0 
+            if best_par in best_deg_minimum.params:
+                best_val = best_deg_minimum.params[best_par]['value']
+                
+            coefsR.append(zfit.Parameter(f'{name}_{name_}', 
+                                         best_val, 
+                                         #0, 10, 0.0001
+                                        ) )
+        new_model = bernstein(coefsR, obs, name=name)
+        
+    
+    elif family=='non_neg_cheby':
+        coefsR = list()
+        for i in range(best_deg+1):
+            name_ = f'c^{i}_{best_deg}'
+            best_par = tools.find_param_substring(best_model, name_)
+            best_val = 0 
+            if best_par in best_deg_minimum.params:
+                best_val = best_deg_minimum.params[best_par]['value']
+                
+            coefsR.append(zfit.Parameter(f'{name}_{name_}', 
+                                         best_val, 
+                                         #0, 10, 0.0001
+                                        ) )
+        new_model = non_negative_chebyshev(coefsR, obs, name=name)
+        
+        
+        
+    elif family=='chebyshev':
+        coefsR = list()
+        for i in range(best_deg+1):
+            name_ = f'c^{i}_{best_deg}'
+            best_par = tools.find_param_substring(best_model, name_)
+            best_val = 1
+            if best_par in  best_deg_minimum.params:
+                best_val = best_deg_minimum.params[best_par]['value']
+                
+            coefsR.append(zfit.Parameter(f'{name}_{name_}', 
+                                         best_val, 
+                                         #0, 10, 0.0001
+                                        ) )
+        new_model = zfit.pdf.Chebyshev(obs, coefsR[1:], coeff0=coefsR[0], name=name)
+
+    else:
+        raise NotImplementedError
+    
+    if return_minimum:
+            if return_chi2s :
+                return new_model, best_deg_minimum, minimums, chi2_list, chi2_dof
+            return new_model, best_deg_minimum, minimums
+    return new_model
+
+
+def get_best_Ftest_model(data, models, obs, nbins, name, 
+                        refit=False, return_new_model=True,
+                        weights = 'none', return_minimum=False,
+                        family='bernstein', display=True, out_dir=None,
+                        return_chi2s = False,
+                        strategy='close1',
+                        type_='phsp', Bin=''):
+    #Initialize parameters
+    for deg, model in models.items():
+        tools.init_params_c(model, family)
+
+
+    if refit:
+        minimums  =  minimize_models_refit(data, models, obs, weights=weights)
+    else:
+        minimums  =  minimize_models(data, models, obs, weights=weights)
+
+
+    best_model, best_deg,  chi2_list, chi2_dof = evaluate_best_Ftest(data, models, minimums,
+                                              nbins=20, 
+                                              weights=weights, 
+                                              display=display,
+                                              strategy=strategy,
+                                              out_dir=out_dir, 
+                                              type_=type_,
+                                              Bin=Bin)
+
+    best_deg_minimum = minimums[best_deg]
+    if type(best_deg_minimum)==list: 
+        best_deg_minimum = best_deg_minimum[-1]
+    
+    if not return_new_model:
+        if return_minimum:
+            return best_model, best_deg_minimum, minimums
+        return best_model
+    
+
+    if family=='bernstein':
+        coefsR = list()
+        for i in range(best_deg+1):
+            name_ = f'c^{i}_{best_deg}'
+            best_par = tools.find_param_substring(best_model, name_)
+            best_val = 0 
+            if best_par in best_deg_minimum.params:
+                best_val = best_deg_minimum.params[best_par]['value']
+                
+            coefsR.append(zfit.Parameter(f'{name}_{name_}', 
+                                         best_val, 
+                                         #0, 10, 0.0001
+                                        ) )
+        new_model_ = bernstein(coefsR, obs, name=name)
+
+        
+        if 'gauss' in best_model.name.lower():
+            print('SUMPDF!!!!')
+            
+            mu_p_par    = tools.find_param_substring(best_model, 'mu+')
+            mu_m_par    = tools.find_param_substring(best_model, 'mu-')
+            sigma_p_par = tools.find_param_substring(best_model, 'sigma+')
+            sigma_m_par = tools.find_param_substring(best_model, 'sigma-')
+            frac_par    = tools.find_param_substring(best_model, 'frac')
+            
+            mu_p    = zfit.Parameter(f'{name}_mu+', best_deg_minimum.params[mu_p_par]['value'])
+            mu_m    = zfit.Parameter(f'{name}_mu-', best_deg_minimum.params[mu_m_par]['value'])
+            sigma_p = zfit.Parameter(f'{name}_sigma+', best_deg_minimum.params[sigma_p_par]['value'])
+            sigma_m = zfit.Parameter(f'{name}_sigma-', best_deg_minimum.params[sigma_m_par]['value'])
+            gauss1 = zfit.pdf.Gauss(mu_p, sigma_p, obs)
+            gauss2 = zfit.pdf.Gauss(mu_m, sigma_m, obs)
+            double_gauss = zfit.pdf.SumPDF([gauss1, gauss2], [0.5], obs, name='Sum of Gaussians')
+
+            #frac_   = zfit.Parameter(f'{name}_frac', best_deg_minimum.params[frac_par]['value'])
+            if not frac_par:
+                new_model = double_gauss
+
+            else:
+                # mu_p    = zfit.Parameter(f'{name}_mu+', best_deg_minimum.params[mu_p_par]['value'])
+                # mu_m    = zfit.Parameter(f'{name}_mu-', best_deg_minimum.params[mu_m_par]['value'])
+                # sigma_p = zfit.Parameter(f'{name}_sigma+', best_deg_minimum.params[sigma_p_par]['value'])
+                # sigma_m = zfit.Parameter(f'{name}_sigma-', best_deg_minimum.params[sigma_m_par]['value'])
+                frac_   = zfit.Parameter(f'{name}_frac', best_deg_minimum.params[frac_par]['value'])
+                # gauss1 = zfit.pdf.Gauss(mu_p, sigma_p, obs)
+                # gauss2 = zfit.pdf.Gauss(mu_m, sigma_m, obs)
+                new_model=zfit.pdf.SumPDF([double_gauss,new_model_], [frac_], obs)
+        else:
+            new_model=new_model_
+
+
+
+
+    
+    if return_minimum:
+            if return_chi2s :
+                return new_model, best_deg_minimum, minimums, chi2_list, chi2_dof
+            return new_model, best_deg_minimum, minimums
+    return new_model
+
+    
+
     
     
+def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', weights='none', display=True, out_dir=None, type_='phsp', Bin=''):
+    """Evaluates the chi2 of each model given binned data with nbins uniform bins.
+     Meant to be used after `minimize_models_refit`
+     It also selects the best model given an `strategy`
+        
+        strategy:
+            close1: Get the best model with chi2/dof = 1
+            min   : Get the best model with minimum chi2/dof
+
+        dof :: Number of bins - Number of free parameters
+    """
+    names_types  =dict(left='Left SB', right='Right SB', phsp='Efficiency') 
+
+
+    print('MODELS::: ', models)
+    chi2_list = list()
+    chi2_dof  = list() 
+    for new_model, key,  minimum in zip(models.values(),minimums.keys(), minimums.values()):
+
+        fig = plt.figure(figsize=[10,10])
+        axes = plot_tools.create_axes_for_pulls(fig)
+        
+        data_h,chi2,exp_h = plot_tools.plot_model(data, new_model, axis=axes[0], bins=nbins, 
+                              plot_components=False, pulls=True, chi_x=0.05, chi_y=0.9,
+                              axis_pulls=axes[1],
+                              print_params=minimum,
+                              params_text_opts={'fontsize': 12, 'ncol':2, 'x':[0.35,0.65], 'y':0.03,
+                                                'bbox':dict(facecolor='white', alpha=0.5, boxstyle='round'),
+                                                'verticalalignment':'bottom', 
+                                                'horizontalalignment':'center', 
+                                                'zorder':1000,
+                                               }, 
+                              remove_string='test_nominal',
+                              weights=weights, 
+                              return_expected_evts=True,
+                              integrate=True
+                             )
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+            plt.savefig(os.path.join(out_dir, f'Deg_{key}.png'), 
+                        bbox_inches='tight')
+        if display:
+            plt.show()
+        plt.close()
+
+        chi2_list.append(chi2)
+        dof = nbins-len(minimum.params)
+        chi2_dof.append(chi2/dof)
+        chi2_list.append(chi2)
+
+    chi2_list = np.array(chi2_list)
+    chi2_dof  = np.array(chi2_dof)
+
+
+
+
+
+    #### Produce RSS (residual sum squared) for each model vs the data
+    RSS = dict()
+    n_params = dict()
+    for deg, model in models.items():
+        n_params[deg] = len(model.get_params())
+        model_histogram = plot_tools.bin_model(model, bins=data_h[1], 
+                                                 verbose=False, 
+                                                 integrate=False)*np.sum(data_h[0])
+        RSS[deg] = np.sum((data_h[0]-model_histogram)**2)    
+
+
+
+
+
+
+
+
+    # Get the best degree in the recursive way
+    best_degrees = []
+    p_vals_tmp = []
+    best_degrees_index = [0]
+    best_deg_tmp = []
+    comparison = []
+    textos = ['F-test (p value)']
+    KEYS = list(RSS.keys())
+    KEYS.sort()
+    print(KEYS)
+    for enum, key1 in enumerate(KEYS):
+        
+        if enum==0: best_degrees.append(key1)
+        n_param1 = n_params[key1]
+        rss1 = RSS[key1]
+        if len(best_degrees_index)>1 and key1>best_degrees[-1]: continue
+
+        for key2 in KEYS:
+            rss2 = RSS[key2]
+            n_param2 = n_params[key2]
+            if n_param1>=n_param2: continue
+            if n_param1<=best_degrees[-1]: continue
+            st, pv = get_f_test(rss1, n_param1, rss2, n_param2, nbins)
+            p_vals_tmp.append(pv)
+            comparison.append(f'{key1} vs {key2}')
+            best_deg_tmp.append(key2)
+            textos.append(f'{key1} vs {key2} =  {round(pv,4)}')
+            if pv<=0.05:
+                best_degrees_index.append(len(p_vals_tmp)-1)
+                best_degrees.append(key2)
+                break
     
+    #In this case, no comparison met the 0.05 threshold, so we take the one with the lowest pval. If the lowest p val is greater than 0.1 we take the initial model
+    if len(best_degrees)==1 and np.min(p_vals_tmp)<0.1 :
+        index_best_deg = np.argmin(p_vals_tmp)
+        best_deg = int(comparison[index_best_deg].split('vs')[1].strip())
+    else:
+        index_best_deg = best_degrees_index[-1]
+        best_deg = best_degrees[-1]
+
+
+
+
+    fig, ax = plt.subplots()
+
+
+    if len(textos)<30:
+        ax.text(1.03, 0.98, '\n'.join(textos),
+                  fontsize=12, va='top', ha='left',
+                  transform=ax.transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+    elif len(textos)<90:
+        half_1 = textos[:int(len(textos)/2)+1]
+        half_2 = textos[int(len(textos)/2)+1:]
+        ax.text(1.03, 0.98, '\n'.join(half_1),
+                  fontsize=12, va='top', ha='left',
+                  transform=ax.transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+        ax.text(1.23, 0.98, '\n'.join(half_2),
+                  fontsize=12, va='top', ha='left',
+                  transform=ax.transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+    else:
+        third_1 = textos[:int(len(textos)/3)+1]
+        third_2 = textos[int(len(textos)/3)+1:int(len(textos)*2/3)+1]
+        third_3 = textos[int(len(textos)*2/3)+1:]
+        ax.text(1.03, 0.98, '\n'.join(third_1),
+                  fontsize=12, va='top', ha='left',
+                  transform=ax.transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+        ax.text(1.23, 0.98, '\n'.join(third_2),
+                  fontsize=12, va='top', ha='left',
+                  transform=ax.transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+        ax.text(1.43, 0.98, '\n'.join(third_3),
+                  fontsize=12, va='top', ha='left',
+                  transform=ax.transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
     
+    max_pvals = 14
+    min_indx = np.clip(index_best_deg-int(max_pvals/2), a_min=0, a_max=None)
+    if len(p_vals_tmp)<14:
+        p_vals_to_plot = p_vals_tmp
+        comparisons_to_plot = comparison
+    else:
+        p_vals_to_plot = p_vals_tmp[min_indx:min_indx+max_pvals]
+        comparisons_to_plot = comparison[min_indx:min_indx+max_pvals]
+
+    ax.plot(range(len(p_vals_to_plot)), p_vals_to_plot,  color='indianred', ls=':', alpha=0.6)
+    ax.scatter(range(len(p_vals_to_plot)), p_vals_to_plot, marker='s', color='indianred', label='F-test')
+    ax.set_xticks(range(len(p_vals_to_plot)))
+    ax.set_xticklabels(comparisons_to_plot, rotation=90)
+    ax.tick_params( axis='x',  which='minor', bottom=False,top=False, )
+
+   
+    ax.set_ylabel('F-test  (p value)')
+    ax.axhline(0.05, ls='-.', color='grey', label='0.05 threshold')
+
+    indx_best_degree_05=-1
+    indx_best_degree_10=-1
+    for indx_bd, val_ in enumerate(p_vals_to_plot):
+        if val_<0.05: indx_best_degree_05=indx_bd
+        if val_<0.1: indx_best_degree_10=indx_bd
+
+    if indx_best_degree_05>=0:
+        indx_best_degree = indx_best_degree_05
+    elif indx_best_degree_10>=0:
+        indx_best_degree = np.argmin(p_vals_to_plot)
+    else:
+        indx_best_degree=-1
+
+    ax.axvline(indx_best_degree , 
+                      label='Selected Degree', 
+                      color='blue', 
+                      ls='--', linewidth=3 )
+
+
+    ax.set_xlabel('Degree of Bernstein Polynomial')
+    ax.set_ylim(-0.02, 1.02)
+
+    if out_dir:
+        plt.savefig(os.path.join(out_dir, f'Summary.png'), bbox_inches='tight')
+    if display:
+        plt.show()
+    plt.close()
+
+
+
+
+
+
+
+
+
+    fig, axes = plt.subplots(1,4, figsize=[45,10])
+    colors=['crimson', 'green', 'cyan', 'lime', 'magenta']
+    ls=['--', '-.', ':', '--', '-.']    
     
+    if len(textos)<30:
+        axes[-1].text(1.03, 0.98, '\n'.join(textos),
+                  fontsize=12, va='top', ha='left',
+                  transform=axes[-1].transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+    elif len(textos)<90:
+        half_1 = textos[:int(len(textos)/2)+1]
+        half_2 = textos[int(len(textos)/2)+1:]
+        axes[-1].text(1.03, 0.98, '\n'.join(half_1),
+                  fontsize=12, va='top', ha='left',
+                  transform=axes[-1].transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+        axes[-1].text(1.23, 0.98, '\n'.join(half_2),
+                  fontsize=12, va='top', ha='left',
+                  transform=axes[-1].transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+    else:
+        third_1 = textos[:int(len(textos)/3)+1]
+        third_2 = textos[int(len(textos)/3)+1:int(len(textos)*2/3)+1]
+        third_3 = textos[int(len(textos)*2/3)+1:]
+        axes[-1].text(1.03, 0.98, '\n'.join(third_1),
+                  fontsize=12, va='top', ha='left',
+                  transform=axes[-1].transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+        axes[-1].text(1.23, 0.98, '\n'.join(third_2),
+                  fontsize=12, va='top', ha='left',
+                  transform=axes[-1].transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+        axes[-1].text(1.43, 0.98, '\n'.join(third_3),
+                  fontsize=12, va='top', ha='left',
+                  transform=axes[-1].transAxes, bbox={'facecolor': 'grey', 'alpha': 0.1, 'boxstyle':"round"})
+    
+
+    axes[-1].plot(range(len(p_vals_to_plot)), p_vals_to_plot,  color='indianred', ls=':', alpha=0.6)
+    axes[-1].scatter(range(len(p_vals_to_plot)), p_vals_to_plot, marker='s', color='indianred', label='F-test')
+    axes[-1].set_xticks(range(len(p_vals_to_plot)))
+    axes[-1].set_xticklabels(comparisons_to_plot, rotation=90)
+    axes[-1].tick_params( axis='x',  which='minor', bottom=False,top=False, )
+    axes[-1].set_ylabel('F-test  (p value)')
+    axes[-1].axhline(0.05, ls='-.', color='grey', label='0.05 threshold')
+
+
+    axes[-1].axvline(indx_best_degree , 
+                      label='Selected Degree', 
+                      color='blue', 
+                      ls='--', linewidth=3 )
+
+
+    axes[-1].set_xlabel('Degree of Bernstein Polynomial')
+    axes[-1].set_ylim(-0.02, 1.02)
+
+
+
+
+    keys_models   = list(models.keys()) 
+    keys_models.sort()
+    models_per_ax = int(len(models)/3)
+    best_deg_ = best_deg
+    if -1 in keys_models:
+        best_deg_ = best_deg+1
+    for indx_ax in range(3):
+        ax = axes[indx_ax]
+        main_ks = dict(color=colors[0], linewidth=2, ls=ls[0])
+
+        if best_deg_==models_per_ax*indx_ax:
+            main_ks = dict(color='blue', 
+                           linewidth=3)
+       
+        if indx_ax ==2:
+            keys_ax = keys_models[indx_ax*models_per_ax:]
+        else:
+            keys_ax = keys_models[indx_ax*models_per_ax:(indx_ax+1)*models_per_ax]
+        
+        _plot_ini = plot_tools.plot_model(data, 
+                                      models[keys_ax[0]], 
+                                      axis=ax, 
+                                      weights=weights, 
+                                      bins=nbins, 
+                                      main_kwargs=main_ks, 
+                                      return_chi2=True)
+        for indx, key_model in enumerate(keys_ax[1:]):
+
+            main_ks = dict(color=colors[indx+1], linewidth=2, ls=ls[indx+1])
+            if best_deg_==models_per_ax*indx_ax+indx+1:
+                main_ks = dict(color='blue', 
+                               linewidth=4)
+            plot_tools.model(models[key_model], scaling=_plot_ini[0], axis=ax, **main_ks)
+        ax.legend(frameon=True, ncol=2, fontsize=13)
+    axes[1].set_title(f'$q^2$ Bin {Bin} - {names_types[type_.lower()]}')
+    legend_1 = axes[-1].legend(frameon=True, #loc='upper right',
+                        title=f'{names_types[type_.lower()]}\n$q^2$Bin {Bin}', fontsize=13, title_fontsize=15)
+    if out_dir:
+        plt.savefig(os.path.join(out_dir+'../../',f"{names_types[type_.lower()].replace(' ','')}_Bin{Bin}.pdf"),
+               bbox_inches='tight')
+        #plt.savefig(os.path.join(out_dir, f'Summary.png'), bbox_inches='tight')
+    if display:
+        plt.show()
+    plt.close()
+
+
+    return models[best_deg], best_deg, chi2_list, chi2_dof
+
+
     
     
     

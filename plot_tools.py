@@ -29,8 +29,12 @@ pretty_names = dict(
     cosThetaKMu = r'$\cos \theta_{\ell}$',
     Bpt = '$B$ pT  [GeV/c]',
     kpt = '$K$ pT  [GeV/c]',
-    mu1_pt = '$\mu_{1}$ pT  [GeV/c]',
-    mu2_pt = '$\mu_{2}$ pT  [GeV/c]',
+    #mu1_pt = '$\mu_{1}$ pT  [GeV/c] - (No Vtx. fit)',
+    #mu2_pt = '$\mu_{2}$ pT  [GeV/c] - (No Vtx. fit)',
+    l1pt = '$\mu_{1}$ pT  [GeV/c]',
+    l2pt = '$\mu_{2}$ pT  [GeV/c]',
+    mu1_pt = '$\mu_{1}$ pT  [GeV/c] (prefit)',
+    mu2_pt = '$\mu_{2}$ pT  [GeV/c] (prefit)',
     prob = '$SV_{prob}$',
     cosA = r'$\cos \alpha$',
     signLxy = r'$L_{xy}/\sigma_{Lxy}$',
@@ -38,14 +42,14 @@ pretty_names = dict(
     ePDL = r'$\sigma_{PDL}$ [cm]',
     BMass = 'B mass  [GeV/$c^2$]',
     DiMuMass = '$\mu^+\mu^-$ mass  [GeV/$c^2$]',
-    mu1_eta = '$\mu_{1}$ $\eta$',
-    mu2_eta = '$\mu_{2}$ $\eta$',
+    #mu1_eta = '$\mu_{1}$ $\eta$',
+    #mu2_eta = '$\mu_{2}$ $\eta$',
     mu1_IP_sig = '$\mu_{1}$ IP/$\sigma_{IP}$',
     mu2_IP_sig = '$\mu_{2}$ IP/$\sigma_{IP}$',
     fit_eta = '$B^+ \eta$',
     fit_k_eta = '$K^+ \eta$',
-    fit_l1_eta = r'$\mu_{1} \eta$ - (fitted)',
-    fit_l2_eta = r'$\mu_{2} \eta$ - (fitted)',
+    fit_l1_eta = r'$\mu_{1} \eta$',
+    fit_l2_eta = r'$\mu_{2} \eta$',
 )
 
 
@@ -268,13 +272,51 @@ def hist(data:'array like data',
 
 
 ######################################## 1D HISTOGRAMS GIVEN HEIGHT AND BINS EDGES  ########################################
-def hist_from_heights(heights, bin_edges, axis=None, **kwargs):
-    bin_mean = (bin_edges[1:]+bin_edges[:-1])/2
-    width = bin_edges[1]-bin_edges[0]
-    if axis:
-        fig = axis.bar(bin_mean, heights, width=width, **kwargs)
-    else:
-        fig = plt.bar(bin_mean, heights, width=width, **kwargs)
+def rebin_data(heights, bin_edges, join_n_bins=1, how='right'):
+    new_heights = list()
+    new_bin_edges=list()
+    
+    new_bin_edges.append(bin_edges[0])
+    for indx in range(int(len(heights)/join_n_bins)+1):
+        last_indx = (indx+1)*join_n_bins
+        if last_indx>len(heights): break
+        new_heights.append(np.sum(heights[indx*join_n_bins:(indx+1)*join_n_bins]))
+        new_bin_edges.append(bin_edges[(indx+1)*join_n_bins])
+        
+    return np.array(new_heights), np.array(new_bin_edges)
+
+    
+def hist_from_heights(heights, bin_edges, axis=None, histtype='bar', join_n_bins=1, how='right', **kwargs):
+    
+    #TODO
+    #if len(heights)==len(bin_edges)+1:
+    #    heights_tmp = heights[1:-1]
+    if join_n_bins>1:
+        heights_tmp, bin_edges_tmp = rebin_data(heights, bin_edges, join_n_bins=join_n_bins, how='right')
+    else: 
+        heights_tmp, bin_edges_tmp = heights, bin_edges
+
+    if histtype=='bar':
+        bin_mean = (bin_edges_tmp[1:]+bin_edges_tmp[:-1])/2
+        width = bin_edges_tmp[1]-bin_edges_tmp[0]
+        if axis:
+            fig = axis.bar(bin_mean, heights_tmp, width=width, **kwargs)
+        else:
+            fig = plt.bar(bin_mean, heights_tmp, width=width, **kwargs)
+    
+    elif histtype in ['step', 'stepfilled'] :
+        x_pos = np.append(bin_edges_tmp, bin_edges_tmp[-1])
+        y_pos = np.append(np.append(0.1, heights_tmp),0.1)
+        if axis:
+            if histtype=='step':
+                fig = axis.step(x_pos, y_pos, where="pre" ,**kwargs)
+            elif histtype=='stepfilled':
+                fig = axis.fill_between(x_pos, y_pos, step="pre" ,**kwargs)
+        else:
+            if histtype=='step':
+                fig = plt.step(x_pos, y_pos,where="pre" ,**kwargs)
+            elif histtype=='stepfilled':
+                fig = plt.fill_between(x_pos, y_pos,step="pre" ,**kwargs)
     return fig
 ######################################## 1D HISTOGRAMS GIVEN HEIGHT AND BINS EDGES  ########################################
 
@@ -311,7 +353,10 @@ def create_pulls(histogram, pdf, y_err, integrate=True):
             print('\t', i+1, f'/ {len(histogram[0])} ')
         #pdb.set_trace()
         if integrate:
-            val = pdf.integrate(limits=[histogram[1][i],histogram[1][i+1]]).numpy()[0]
+            try:
+                val = pdf.integrate(limits=[histogram[1][i],histogram[1][i+1]]).numpy()[0]
+            except IndexError:
+                val = pdf.integrate(limits=[histogram[1][i],histogram[1][i+1]]).numpy()
         else:
             val = pdf.pdf((-histogram[1][i]+histogram[1][i+1])/2).numpy()
         expected_events_m[i] = val*np.sum(histogram[0])
@@ -624,7 +669,7 @@ def textParams_from_model(model, ncol=1, clean=True):
 
 
 
-def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_expected_evts=False):
+def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_expected_evts=False, ignore_yield=False):
 
     try:
         pdf.norm_range.spaces
@@ -633,15 +678,20 @@ def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_e
         ]
     except AttributeError:
         limits = pdf.norm_range.limit1d
-
         
     bin_mean = (h[1][1:]+h[1][:-1])/2
     bin_sz = h[1][1]-h[1][0]
     n_events = np.sum(h[0])
     y_err = np.sqrt(h[0]*(1-h[0]/n_events))
     y_err = np.sqrt(h[0])
-    expected_events = bin_model(pdf, h[1], integrate=integrate)*n_events
-        
+
+    if pdf.is_extended and ignore_yield==False:
+        scale_events = pdf.get_yield().value().numpy()
+    else:
+        scale_events = n_events
+    
+    binned_model = bin_model(pdf, h[1], integrate=integrate)
+    expected_events = binned_model * scale_events
     #pull = (h[0]-expected_events)/np.sqrt(expected_events)
     pull = (h[0]-expected_events)/np.sqrt(h[0])
     axis.errorbar(bin_mean, pull, yerr=1, ls='none', capsize=1, color='black')
@@ -709,7 +759,7 @@ def plot_projection(data, model, var_to_integrate, axis, bins=70,  return_chi2 =
     elif pulls:
         axis.set_xticks([])
         print(pdf.obs[0], pdf.norm_range.limit1d)
-        chi2 = plot_pull(h, pdf, pdf.obs[0], axis_pulls, return_chi2=True)
+        chi2 = plot_pull(h, pdf, pdf.obs[0], axis_pulls, return_chi2=True,)
         if print_chi2_dof:
             dof_int = bins-len(pdf.params) if not print_params else bins-len(print_params.params)
             dof_int -=1
@@ -829,7 +879,11 @@ def bin_model(model, bins=20, integrate=False, verbose=True, center=True):
     binned = np.zeros(len(h1)-1, dtype=np.float128)
     if integrate:
         for i in range(len(h1)-1):
-            integration = model.integrate(limits=[h1[i],h1[i+1]]).numpy()[0]
+            #pdb.set_trace()            
+            try:
+                integration = model.integrate(limits=[h1[i],h1[i+1]]).numpy()[0]
+            except IndexError:
+                integration = model.integrate(limits=[h1[i],h1[i+1]]).numpy()
             binned[i] = integration
             if verbose : print(f'   Bin {i}, {integration}')
     else:
@@ -865,6 +919,8 @@ def plot_model(data,
                level=1,
                return_expected_evts = False,
                regex='',
+               ignore_yield=False, 
+               integrate=False, 
                **kwargs):
     """ Tries to be an all-in-one 1D-plotting for (~kind of) HEP style.
         Can create pulls given a binning, and also evaluate chi2/DOF
@@ -885,6 +941,8 @@ def plot_model(data,
     main_kwargs: dict
         Arguments to be passed to the Top model,
         dict(fill=True) : create a fill plot instead of a simple plot 
+    ignore_yield: bool
+        If True and model.is_extended, ignore the yield of the model and scale to data
     Returns
     ---------------
     Data histogram: (np.array, np.array)
@@ -903,15 +961,17 @@ def plot_model(data,
         limits = pdf.norm_range.limit1d
     if np.all(weights=='none'):
         weights = np.ones_like(data)
+
     h = np.histogram(data, bins=bins, range=limits, weights=weights)
     bin_mean = (h[1][1:]+h[1][:-1])/2
     bin_size = h[1][1]-h[1][0]
     n_events = np.sum(h[0])
     #scale_ = bin_size*n_events
-    if pdf.is_extended:
+    if pdf.is_extended and ignore_yield==False:
         scale = pdf.get_yield().value().numpy()*bin_size
     else:
         scale = np.sum(np.diff(h[1])*h[0])
+    print(scale)
     y_err = np.sqrt(h[0]*(1-h[0]/n_events))
     mask_ = h[0]>0
     
@@ -974,6 +1034,7 @@ def plot_model(data,
             if model_has_pdfs(model) and level==2 and regex in model.name.lower():
                 ls = ['--', ':', '-.', '--', ':', '.-']
                 linewidths = [1.5, 1.5, 1.5, 3, 3, 3,]
+                linewidths = [2.5, 3.5, 3.5, 5, 7, 7,]
                 #print(model.name, 'MODELS')
                 for j in range(len(model.pdfs)):
                     submodel = model.pdfs[j]
@@ -1044,14 +1105,15 @@ def plot_model(data,
     if pulls and not axis_pulls:
         raise NotFoundError('You need to pass another axis for the pulls ')
     elif pulls:
-        chi2 = plot_pull(h, pdf, xlabel, axis_pulls, return_chi2=True, return_expected_evts=return_expected_evts)
+        chi2 = plot_pull(h, pdf, xlabel, axis_pulls, return_chi2=True, return_expected_evts=return_expected_evts, ignore_yield=ignore_yield, integrate=integrate)
         if type(chi2) in [list, tuple] : chi2, expected_events = chi2
         if print_chi2_dof:
             n_params = len(pdf.params)
             if print_params and type(print_params)!=bool:
                 n_params = len(print_params.params)
-            dof_int = bins-n_params
-            dof_int -=1
+            zero_count_bins = np.sum(h[0]<=0)
+            dof_int = bins-n_params-zero_count_bins
+            #dof_int -=1
             #print(chi2)
             tex_chi = r'$ \chi^2 /DOF$ = ' +f'{round(chi2,3)}/{dof_int} = {round(chi2/dof_int,3)}'
             #chi_x, chi_y = kwargs.get('chi_x', 0.5),  kwargs.get('chi_y', 0.5)
@@ -1072,26 +1134,36 @@ def plot_model(data,
         return h
     
     
-def model(pdf, scaling=1, axis=None, **kwargs):
+def model(pdf, scaling=1, axis=None, ignore_yield=False, limits=None, **kwargs):
     
     if not axis:
         fig,axis = plt.subplots()
-        
-    try:
-        pdf.norm_range.spaces
-        limits = [pdf.norm_range.spaces[0].lower.flatten()[0],
-                  pdf.norm_range.spaces[-1].upper.flatten()[0]
-        ]
-    except AttributeError:
-        limits = pdf.norm_range.limit1d
+    
+    if not limits:
+        try:
+            pdf.norm_range.spaces
+            limits = [pdf.norm_range.spaces[0].lower.flatten()[0],
+                      pdf.norm_range.spaces[-1].upper.flatten()[0]
+            ]
+        except AttributeError:
+            limits = pdf.norm_range.limit1d
     x_np = np.linspace(limits[0], limits[1], 1000)
 
     if type(scaling)==tuple:
-        scaling_ = np.sum(scaling[0]*np.diff(scaling[1]))
+        if not(pdf.is_extended) or ignore_yield:
+            scaling_ = np.sum(scaling[0]*np.diff(scaling[1]))
+        else:
+            scaling_ = pdf.get_yield().numpy()*np.diff(scaling[1])[0]
     else:
         scaling_ = scaling
     
-    axis.plot(x_np, pdf.pdf(x_np)*scaling_, label=pdf.name, **kwargs)
+    if 'label' in kwargs:
+        pdf_name = kwargs['label']
+        del kwargs['label']
+    else:
+        pdf_name = pdf.name
+
+    return axis.plot(x_np, pdf.pdf(x_np)*scaling_, label=pdf_name, **kwargs)
     
     
     
@@ -1265,6 +1337,7 @@ def compare_plot(Data_Num,
                  show=False,
                  return_k_val=False,
                  lower_lines=True,
+                 xlim_tight=False,
                  ):
     """Plot two samples as histograms with same binning and evaluate the ratio of their hieghts,
     if both samples came from the distribution the ratio should be distributied uniformly
@@ -1393,6 +1466,10 @@ def compare_plot(Data_Num,
     elif low_ylim:
         _lower.set_ylim(*low_ylim)
     
+    if xlim_tight:
+        _lower.set_xlim([Histo_Num[1][0], Histo_Num[1][-1]])
+        _main.set_xlim([Histo_Num[1][0], Histo_Num[1][-1]])
+
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
         plt.savefig(os.path.join(out_dir, f'{k}{out_name}.png'),

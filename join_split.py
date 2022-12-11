@@ -105,21 +105,54 @@ def only_split(df, bins):
         q2 = np.power(df.DiMuMass,2)
         
     for bin_ in bins:
-            
-        if bin_!=str(11):
-            mask = (q2>bins[bin_][0]) & (q2<=bins[bin_][1])
+        range_ = bins[bin_]    
+        
+        if type(range_[0])!=list:
+            mask = (q2>range_[0]) & (q2<=range_[1])
         else:
-            mask0 = (q2>bins[bin_][0][0]) & (q2<=bins[bin_][0][1])
-            mask1 = (q2>bins[bin_][1][0]) & (q2<=bins[bin_][1][1])
-            mask2 = (q2>bins[bin_][2][0]) & (q2<=bins[bin_][2][1])
+            mask0 = (q2>range_[0][0]) & (q2<=range_[0][1])
+            mask1 = (q2>range_[1][0]) & (q2<=range_[1][1])
+            mask2 = (q2>range_[2][0]) & (q2<=range_[2][1])
             mask = mask0 | mask1 | mask2
 
         bindf           = df[mask]
-        data_dict[int(bin_)] = bindf
+        data_dict[bin_] = bindf
         
     return data_dict
 
+def get_q2_Bin(df, bins, q2Bin):
+    if not type(bins)==dict:
+        bins = read_json(bins) 
+    if str(q2Bin) == 'Complete':
+        return df
         
+    #pdb.set_trace()
+    if not type(bins)==dict:
+        bins = read_json(bins) 
+
+    
+    if 'q2' in df:
+        q2 = df['q2']
+    else:
+        q2 = np.power(df.DiMuMass,2)
+     
+
+    q2Bin_range = bins.get(str(q2Bin), None) 
+    if not q2Bin_range:
+        keys_list = "\n".join([k for k in bins.keys()])
+        raise NotImplementedError(f'Bin: -> {q2Bin} <- not found in bins json. Json have these keys: {keys_list}')
+
+    if len(q2Bin_range)==2:
+        mask = (q2>bins[q2Bin][0]) & (q2<=bins[q2Bin][1])
+    elif len(q2Bin_range)==3:
+        mask0 = (q2>bins[q2Bin][0][0]) & (q2<=bins[q2Bin][0][1])
+        mask1 = (q2>bins[q2Bin][1][0]) & (q2<=bins[q2Bin][1][1])
+        mask2 = (q2>bins[q2Bin][2][0]) & (q2<=bins[q2Bin][2][1])
+        mask = mask0 | mask1 | mask2
+    else:
+        raise NotImplementedError(f'Bin: {q2Bin} has the following range {q2Bin_range}. I only know to interpret one and three bins. Solution may be easy :)')
+
+    return df[mask]
         
         
         

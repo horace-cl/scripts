@@ -30,7 +30,6 @@ def read_johnson(obs, params, name='', fixed_params=True):
     return customPDFs.JohnsonSU(gamma, delta, mu, sigma, obs, name=f'JohnsonSU_SignalMass{name}')
 
 
-
 def read_gauss_exp(obs, params, name='', fixed_params=True):
     mu     = params['$\\mu_B$']['value']
     sigma  = params['$\\sigma_B$']['value']
@@ -109,8 +108,7 @@ def read_single_berntsein_polynomial(obs, params, name='', fixed_params=True):
     else:
         coefs = [ params[c]['value'] for c in ordered_coefs]
         return customPDFs.bernstein(coefs, obs, name)
-    
-    
+     
     
 def read_complete_model(mass, cos, params, name='', fixed_params=True, afb_ini='none', fh_ini='none'):
 
@@ -123,6 +121,7 @@ def read_complete_model(mass, cos, params, name='', fixed_params=True, afb_ini='
     gausexp = read_gauss_exp(mass, params_dict, fixed_params=fixed_params, name=name)
     
     #Angular Models
+    gauss_left = any([p for p in params_dict.keys() if 'Left' in p and 'mu' in p])
     leftSB     = read_berntsein_polynomial(cos, params_dict, type_='Left')
     efficiency = read_berntsein_polynomial(cos, params_dict, type_='Eff')
     rightSB    = read_berntsein_polynomial(cos, params_dict, type_='Right')
@@ -140,22 +139,22 @@ def read_complete_model(mass, cos, params, name='', fixed_params=True, afb_ini='
         frac= zfit.Parameter('$frac_SB$'+name,params_dict['frac_SB']['value'])
     except KeyError:
         frac= zfit.Parameter('$fracSB$'+name,params_dict['fracSB']['value'])
-
     angularBackground = zfit.pdf.SumPDF([leftSB, rightSB], fracs=frac, obs=cos, name=r'AngularBack'+name)
     
+
     #Signal Yields
     Ys  = zfit.Parameter('signalY'+name,params_dict['Ys']['value'])
     Yb  = zfit.Parameter('backgroundY'+name,params_dict['Yb']['value'])
     
     #Extending Models
-    SignalModel    = zfit.pdf.ProductPDF([john, Decay_rate_eff], name='Signal_model'+name).create_extended(Ys)
-    BackgroundModel= zfit.pdf.ProductPDF([gausexp, angularBackground], name='Background_model'+name).create_extended(Yb)
+    SignalModel    = zfit.pdf.ProductPDF([john, Decay_rate_eff], name='Signal_model'+name, obs=mass*cos).create_extended(Ys)
+    BackgroundModel= zfit.pdf.ProductPDF([gausexp, angularBackground], name='Background_model'+name, obs=mass*cos).create_extended(Yb)
     
-    CompleteModel  = zfit.pdf.SumPDF([SignalModel, BackgroundModel], name='Complete_model'+name )
+    CompleteModel  = zfit.pdf.SumPDF([SignalModel, BackgroundModel], name='Complete_model'+name, obs=mass*cos)
     AngularProjec  = zfit.pdf.SumPDF([Decay_rate_eff.create_extended(Ys), 
-                                      angularBackground.create_extended(Yb)], name='AngularProj.'+name )
+                                      angularBackground.create_extended(Yb)], name='AngularProj'+name, obs=cos )
     MassiveProjec  = zfit.pdf.SumPDF([john.create_extended(Ys), 
-                                      gausexp.create_extended(Yb)], name='MassProj.'+name )
+                                      gausexp.create_extended(Yb)], name='MassProj'+name , obs=mass)
     
     return CompleteModel, (MassiveProjec, AngularProjec)
 
@@ -176,9 +175,9 @@ def read_complete_model_2components(mass, cos, params, name='',
     gausexp = read_gauss_exp(mass, params_dict, fixed_params=fixed_params, name=name)
     
     #Angular Models
-    leftSB     = read_berntsein_polynomial(cos, params_dict, type_='Left', fixed_params=fixed_params)
-    efficiency = read_berntsein_polynomial(cos, params_dict, type_='Eff', fixed_params=fixed_params)
-    rightSB    = read_berntsein_polynomial(cos, params_dict, type_='Right', fixed_params=fixed_params)
+    leftSB     = read_berntsein_polynomial(cos, params_dict, type_='Left', fixed_params=fixed_params, name='Left'+name)
+    efficiency = read_berntsein_polynomial(cos, params_dict, type_='Eff', fixed_params=fixed_params, name='Efficiency'+name)
+    rightSB    = read_berntsein_polynomial(cos, params_dict, type_='Right', fixed_params=fixed_params, name='Right'+name)
     
     #AngularSignalModel
     if afb_ini=='none': AFB = zfit.Parameter('AFB'+name, params_dict['AFB']['value'])
@@ -221,7 +220,6 @@ def read_complete_model_2components(mass, cos, params, name='',
         projections['efficiency'] = efficiency
 
     return CompleteModel, projections
-
 
 
 def create_complete_pdf(BIN, mass, cos, version='', name='', afb_ini=0, fh_ini=0.2, path = 'none'):
