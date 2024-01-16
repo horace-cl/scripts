@@ -24,6 +24,31 @@ import re
 import json
 import tools
 
+
+class BinnedPDF(zfit.pdf.BasePDF):
+
+    def __init__(self, counts, bin_edges, obs, name='BinnedModel'):
+        self.counts = counts
+        self.bin_edges = bin_edges
+        super().__init__(obs=obs, name=name)
+        #params = {'counts' : counts,
+        #              'bin_edges' : bin_edges}
+        #super().__init__(obs, params, name)
+        
+    def _binContent(self, x):
+        digits = np.digitize(x, self.bin_edges, right=True)
+        digits = np.clip(digits, a_min=0, a_max=len(self.counts))-1
+        #print(digits)
+        return self.counts[digits]
+
+    def _unnormalized_pdf(self, x):  # or even try with PDF
+        x = z.unstack_x(x)
+        print(type(x))
+        probs =  z.py_function(func=self._binContent, inp=[x], Tout=tf.float64)
+        return probs
+    
+    
+
 class exGaussian(zfit.pdf.BasePDF):
     """Positive Exponential Distribution convoluted with Gaussian
     https://en.wikipedia.org/wiki/Exponentially_modified_Gaussian_distribution"""
@@ -438,9 +463,9 @@ class atanTF(zfit.pdf.BasePDF):
         super().__init__(obs, params, name=name)
 
     def _unnormalized_pdf(self, x):
-        print(x_)
-        #x_T  = (x_-self.params['mu'])/self.params['sigma']
-        pdf_ = atan((self.params['mu']-x_)/self.params['sigma'])
+        x_   = z.unstack_x(x)
+        x_T  = (self.params['mu']-x_)/self.params['sigma']
+        pdf_ = atan(x_T)+np.pi/2
         return pdf_ # erf(-x) = -erf(x)
 
     
@@ -512,27 +537,146 @@ class gauss2D(zfit.pdf.BasePDF):
 
 
 
+
+
+
+
+
 #### ! #### ! #### ! #### ! #### ! #### ! #### ! #### ! ####
 ####   ####  To make the 2D Signal + Background Model   ####
 #### ! #### ! #### ! #### ! #### ! #### ! #### ! #### ! ####
 
-def read_johnson(obs, params, name='', fixed_params=True):
-    gamma = params['$\\gamma$']['value']
-    delta = params['$\\delta$']['value']
-    mu    = params['$\\mu$']['value']
-    sigma = params['$\\sigma$']['value']
+def find_suffix_auto(params, look_for=r'$\mu$'):
+    mu_name = [key for key in params.keys() if look_for in key]
+    if len(mu_name)==0 or len(mu_name)>1:
+        print('WARNING!')
+        print('Suffix automatic search not succesful, please check your naming')
+        print('Setting empty suffix :S')
+        suffix_saved = ''
+    else:
+        suffix_saved = mu_name[0].split(look_for)[1]
+        print('Automatic suffix found!: \n -->', suffix_saved)
+    return suffix_saved
+
+
+
+
+
+def read_johnson(obs, params, name='', fixed_params=True, suffix_saved='auto'):
+    if suffix_saved=='auto':
+        suffix_saved = find_suffix_auto(params)
+
+    gamma = params['$\\gamma$'+suffix_saved]['value']
+    delta = params['$\\delta$'+suffix_saved]['value']
+    mu    = params['$\\mu$'+suffix_saved]['value']
+    sigma = params['$\\sigma$'+suffix_saved]['value']
     if not fixed_params:
         gamma = zfit.Parameter('$\\gamma$'+name, gamma)
         delta = zfit.Parameter('$\\delta$'+name, delta)
         mu    = zfit.Parameter('$\\mu$'+name   , mu)
         sigma = zfit.Parameter('$\\sigma$'+name, sigma)
+
     return JohnsonSU(gamma, delta, mu, sigma, obs, name=f'JohnsonSU_SignalMass{name}')
 
+def read_doubleCBGauss(obs, params, name='', fixed_params=True,  suffix_saved='auto'):
+    if suffix_saved=='auto':
+        suffix_saved = find_suffix_auto(params)
+    
+    space_limits = obs.limit1d
+    distance = space_limits[1]-space_limits[0]
+    mu     = params[r'$\mu$'+suffix_saved]['value']
+    sigma  = params[r'$\sigma$'+suffix_saved]['value']
+    alphal = params[r'$\alpha_l$'+suffix_saved]['value']
+    nl     = params[r'$n_l$'+suffix_saved]['value']
+    alphar = params[r'$\alpha_r$'+suffix_saved]['value']
+    nr     = params[r'$n_r$'+suffix_saved]['value']
+    try:
+        sigmag = params[r'$\sigma_g$'+suffix_saved]['value']
+    except KeyError:
+        sigmag = params[r'$\sigma_2$'+suffix_saved]['value']
+    frac   = params[r'frac'+suffix_saved]['value']
 
-def read_gauss_exp(obs, params, name='', fixed_params=True):
-    mu     = params['$\\mu_B$']['value']
-    sigma  = params['$\\sigma_B$']['value']
-    lambda_= params['$\\lambda_B$']['value']
+    if not fixed_params:
+        mu     = zfit.Parameter(r'$\mu$'+f'{name}', mu, 
+                                space_limits[0]-distance*0.2,
+                                space_limits[1]+distance*0.2,
+                                )
+        sigma  = zfit.Parameter(r'$\sigma$'+f'{name}', sigma)
+        alphal = zfit.Parameter(r'$\alpha_l$'+f'{name}', alphal)
+        nl     = zfit.Parameter(r'$n_l$'+f'{name}', nl)
+        alphar = zfit.Parameter(r'$\alpha_r$'+f'{name}', alphar)
+        nr     = zfit.Parameter(r'$n_r$'+f'{name}', nr)
+        sigmag = zfit.Parameter(r'$\sigma_g$'+f'{name}', sigmag, 0.001, 0.1)
+        frac   = zfit.Parameter(r'frac'+name, frac, 0, 1)
+
+    dcb = zfit.pdf.DoubleCB( mu = mu, sigma = sigma,
+                             alphal = alphal, nl = nl,
+                             alphar = alphar, nr = nr,
+                             obs    = obs, name='DCB_'+name )
+    gauss = zfit.pdf.Gauss(mu, sigmag, obs, name='Gauss_'+name)
+
+    return zfit.pdf.SumPDF([dcb, gauss], frac, name='DoubleCBGauss'+name)
+
+def read_dcb(obs, params, name='', fixed_params=True, suffix_saved='auto'):
+    
+    if suffix_saved=='auto':
+        mu_name = [key for key in params.keys() if r'$\mu$' in key]
+        if len(mu_name)==0 or len(mu_name)>1:
+            print('WARNING!')
+            print('Suffix automatic search not succesful, please check your naming')
+            print('Setting empty suffix :S')
+            suffix_saved = ''
+        else:
+            suffix_saved = mu_name[0].split(r'$\mu$')[1]
+            print('Automatic suffix found!: \n -->', suffix_saved)
+
+    mu    = params[r'$\mu$'+suffix_saved]['value']
+    sigma = params[r'$\sigma$'+suffix_saved]['value']
+    alphal= params[r'$\alpha_l$'+suffix_saved]['value']
+    nl    = params[r'$n_l$'+suffix_saved]['value']
+    alphar= params[r'$\alpha_r$'+suffix_saved]['value']
+    nr    = params[r'$n_r$'+suffix_saved]['value']
+    
+    if not fixed_params:
+        mu    = zfit.Parameter(r'$\mu$'+f'{name}', mu)
+        sigma = zfit.Parameter(r'$\sigma$'+f'{name}', sigma)
+        alphal= zfit.Parameter(r'$\alpha_l$'+f'{name}', alphal)
+        nl    = zfit.Parameter(r'$n_l$'+f'{name}', nl)
+        alphar= zfit.Parameter(r'$\alpha_r$'+f'{name}', alphar)
+        nr    = zfit.Parameter(r'$n_r$'+f'{name}', nr)
+
+    return zfit.pdf.DoubleCB( mu = mu, sigma = sigma,
+                             alphal = alphal, nl = nl,
+                             alphar = alphar, nr = nr,
+                             obs    = obs )
+
+
+def read_signal_model(obs, params, model_name, name='', fixed_params=True, suffix='auto'):
+    if 'Johnson' == model_name:
+        return read_johnson(obs, params, name=name, 
+                            fixed_params=fixed_params, 
+                            suffix_saved=suffix)
+    elif 'GaussDCB' == model_name:
+        return read_doubleCBGauss(obs, params, name=name, 
+                                  fixed_params=fixed_params, 
+                                  suffix_saved=suffix)
+    elif 'DCB' == model_name:
+        return read_dcb(obs, params, name=name, 
+                        fixed_params=fixed_params, 
+                        suffix_saved=suffix)
+    else:
+        raise NotImplementedError(f'Please implement the reading for the model : {model_name}')
+
+
+
+
+
+def read_gauss_exp(obs, params, name='', fixed_params=True, suffix_saved='auto'):
+    if suffix_saved=='auto':
+        suffix_saved = find_suffix_auto(params, r'$\lambda$')
+    mu     = params['$\\mu_B$'+suffix_saved]['value']
+    sigma  = params['$\\sigma_B$'+suffix_saved]['value']
+    lambda_= params['$\\lambda_B$'+suffix_saved]['value']
     frac  = params['frac_mass']['value']
     if not fixed_params:
         mu     = zfit.Parameter('$\\mu_B$'+name, mu)
@@ -544,22 +688,102 @@ def read_gauss_exp(obs, params, name='', fixed_params=True):
     return zfit.pdf.SumPDF([gauss, exponential], fracs=frac,
                             obs = obs, name = f'Gauss+Exp_BackgroundMass{name}') 
 
+def read_errf_exp(obs, params, name='', fixed_params=True, suffix_saved='auto'):
+    if suffix_saved=='auto':
+        suffix_saved = find_suffix_auto(params, r'$\lambda$')
+    mu     = params[f'$\\mu_B${suffix_saved}']['value']
+    sigma  = params[f'$\\sigma_B${suffix_saved}']['value']
+    lambda_= params[f'$\\lambda_B${suffix_saved}']['value']
+    frac  = params[f'frac_mass{suffix_saved}']['value']
+    if not fixed_params:
+        mu     = zfit.Parameter('$\\mu_B$'+name, mu)
+        sigma  = zfit.Parameter('$\\sigma_B$'+name, sigma)
+        lambda_= zfit.Parameter('$\\lambda_B$'+name, lambda_)
+        frac  = zfit.Parameter('frac_mass'+name, frac, 0, 1)    
+    gauss  = errf(mu = mu, sigma=sigma, obs = obs, name='Gauss_BackMass') 
+    exponential = zfit.pdf.Exponential(lambda_=lambda_, obs = obs, name='Exp_BackMass'+name)    
+    return zfit.pdf.SumPDF([gauss, exponential], fracs=frac,
+                            obs = obs, name = f'ErrF+Exp_BackgroundMass{name}') 
 
-def read_john_gauss_exp(obs, params, name='', fixed_params=True, return_components=True):
+
+def read_background_model(obs, params, model_name, name='', fixed_params=True, suffix='auto'):
+    if 'ExpGauss' == model_name:
+        return read_gauss_exp(obs, params, name=name, 
+                              fixed_params=fixed_params, 
+                              suffix_saved=suffix)
+    elif 'ErrfExp' == model_name:
+        return read_errf_exp(obs, params, name=name, 
+                                  fixed_params=fixed_params, 
+                                  suffix_saved=suffix)
+    else:
+        raise NotImplementedError(f'Please implement the reading for the model : {model_name}')
+
+
+
+
+
+def read_signal_plus_background(obs, params, name='', fixed_params=True, return_components=True, suffix_yield='', suffix_signal='auto', suffix_bkg=''):
     if type(params)==str:
         with open(params, 'r') as jj: params = json.load(jj)
-    Ys = params['Ys']['value']
-    Yb = params['Yb']['value']
+    Ys = params[f'Ys{suffix_yield}']['value']
+    Yb = params[f'Yb{suffix_yield}']['value']
+    if not fixed_params:
+        Ys = zfit.Parameter('Ys'+name, Ys, step_size=0.1)
+        Yb = zfit.Parameter('Yb'+name, Yb, step_size=0.1)
+    signal_model_name = params.get('signal_model', 'DCB')
+    background_model_name = params.get('background_model', 'ErrfExp')
+    
+    signal_model     = read_signal_model(    obs, params, signal_model_name, name, fixed_params, suffix = suffix_signal) 
+    background_model = read_background_model(obs, params, background_model_name, name, fixed_params, suffix = suffix_bkg)
+
+    signal_extended     = signal_model.create_extended(Ys)
+    background_extended = background_model.create_extended(Yb)
+    
+    if return_components:
+        return signal_model, background_model, zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
+    return zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
+
+def read_dcb_errf_exp(obs, params, name='', fixed_params=True, return_components=True, suffix_yield='', suffix_dcb='auto', suffix_bkg=''):
+    if type(params)==str:
+        with open(params, 'r') as jj: params = json.load(jj)
+    Ys = params[f'Ys{suffix_yield}']['value']
+    Yb = params[f'Yb{suffix_yield}']['value']
     if not fixed_params:
         Ys = zfit.Parameter('Ys'+name, Ys)
         Yb = zfit.Parameter('Yb'+name, Yb)
-    johnson = read_johnson(obs, params, name, fixed_params)
-    gausexp = read_gauss_exp(obs, params, name, fixed_params)
-    johnson_extended = johnson.create_extended(Ys)
-    gausexp_extended = gausexp.create_extended(Yb)
+    dcb = read_dcb(obs, params, 
+                   name, fixed_params, 
+                   suffix_saved=suffix_dcb)
+    error_exp= read_errf_exp(obs, params, 
+                             name, fixed_params,
+                            suffix_saved=suffix_bkg)
+    signal_extended = dcb.create_extended(Ys)
+    background_extended = error_exp.create_extended(Yb)
     if return_components:
-        return johnson, gausexp, zfit.pdf.SumPDF([johnson_extended, gausexp_extended], name='MassModel'+name)
-    return zfit.pdf.SumPDF([johnson_extended, gausexp_extended], name='MassModel'+name)
+        return dcb, error_exp, zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
+    return zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
+
+def read_dcbGauss_errf_exp(obs, params, name='', fixed_params=True, return_components=True, suffix_yield='', suffix_dcb='auto', suffix_bkg=''):
+    if type(params)==str:
+        with open(params, 'r') as jj: params = json.load(jj)
+    Ys = params[f'Ys{suffix_yield}']['value']
+    Yb = params[f'Yb{suffix_yield}']['value']
+    if not fixed_params:
+        Ys = zfit.Parameter('Ys'+name, Ys)
+        Yb = zfit.Parameter('Yb'+name, Yb)
+    dcb = read_doubleCBGauss(obs, params, 
+                   name, fixed_params, 
+                   suffix_saved=suffix_dcb)
+    error_exp = read_errf_exp(obs, params, 
+                             name, fixed_params,
+                            suffix_saved=suffix_bkg)
+    signal_extended = dcb.create_extended(Ys)
+    background_extended = error_exp.create_extended(Yb)
+    if return_components:
+        return dcb, error_exp, zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
+    return zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
+
+
 
 
 
@@ -661,3 +885,131 @@ def read_complete_model_2components_V8(mass,
         projections['leftSB']  = leftSB
 
     return CompleteModel, projections
+
+def read_complete_model_2components_V9(mass, 
+    cos, 
+    params, 
+    name='', 
+    fixed_params=True,
+    afb_ini='none', 
+    fh_ini='none',
+    mass_red='none',
+    return_2d_Background=False,
+    return_angular_signal=False,
+    return_efficiency=False,
+    return_1D_models=False,
+    resonances=False
+    ):
+
+    if type(params)==str:
+        params_dict = tools.read_json(params)
+    else:
+        params_dict = params
+
+    #Mass Models:
+    if resonances:
+        signal_mass     = read_dcb(mass,  params_dict, fixed_params=fixed_params, name=name)
+        background_mass = read_errf_exp(mass, params_dict, fixed_params=fixed_params, name=name)
+    else:
+        signal_mass     = read_johnson(mass,  params_dict, fixed_params=fixed_params, name=name)
+        background_mass = read_gauss_exp(mass, params_dict, fixed_params=fixed_params, name=name)
+    if mass_red:
+        signal_mass.set_norm_range(mass_red)
+        background_mass.set_norm_range(mass_red)
+        background_mass.pdfs[0].set_norm_range(mass_red)
+        background_mass.pdfs[1].set_norm_range(mass_red)
+    #Angular Models
+    leftSB     = read_single_berntsein_polynomial(cos, params_dict, previous_name='Left', fixed_params=fixed_params, name='Left'+name)
+    efficiency = read_single_berntsein_polynomial(cos, params_dict, previous_name='Eff', fixed_params=fixed_params, name='Efficiency'+name)
+
+    if any('mu' in p  and 'Right' in p for p in params_dict.keys()):
+        rightSB = read_2gauss_berntsein_polynomial(cos, 
+                                    params_dict, 
+                                    previous_name='Right',
+                                    name = f'Right{name}', fixed_params=False) 
+    else:
+        rightSB = read_single_berntsein_polynomial(cos, 
+                                            params_dict, 
+                                            previous_name='Right',
+                                            name = f'Right{name}', fixed_params=False) 
+
+    #AngularSignalModel
+    if afb_ini=='none': AFB = zfit.Parameter('AFB'+name, params_dict['AFB']['value'])
+    else: AFB = zfit.Parameter('AFB'+name, afb_ini)
+    if fh_ini=='none': FH  = zfit.Parameter('FH'+name, params_dict['FH']['value'])
+    else: FH  = zfit.Parameter('FH'+name, fh_ini)
+
+    Decay_rate = decayWidth(AFB, FH, cos, name='DecayRate'+name)
+    Decay_rate_eff = zfit.pdf.ProductPDF([Decay_rate,efficiency], obs=cos, name=r'Decay$\times$Eff'+name)
+    
+    #AngularBackgroundModel
+    frac_names = ['frac_SB', 'fracSB', '$fracSB$']
+    for frac_name in frac_names:
+        if frac_name in params_dict: break
+    try:
+        #frac= zfit.Parameter('$frac_SB$'+name,params_dict['frac_SB']['value'])
+        frac= zfit.Parameter('$frac_SB$'+name,params_dict[frac_name]['value'])
+    except KeyError:
+        frac= zfit.Parameter('$fracSB$'+name,params_dict['fracSB']['value'])
+    angularBackground = zfit.pdf.SumPDF([leftSB, rightSB], fracs=frac, obs=cos, name=r'AngularBack'+name)
+    
+
+    #Signal Yields
+    param_ys = [p for name, p in params_dict.items() if 'Ys' in name][0]
+    Ys  = zfit.Parameter('Ys'+name,param_ys['value'])
+    Yb  = zfit.Parameter('Yb'+name,params_dict['Yb']['value'])
+
+    #Extending Models
+    SignalModel    = zfit.pdf.ProductPDF([signal_mass, Decay_rate_eff], name='Signal_model'+name).create_extended(Ys)
+    BackgroundModel= zfit.pdf.ProductPDF([background_mass, angularBackground], name='Background_model'+name).create_extended(Yb)
+    
+    CompleteModel  = zfit.pdf.SumPDF([SignalModel, BackgroundModel], name='Complete_model'+name )
+    AngularProjec  = zfit.pdf.SumPDF([Decay_rate_eff.create_extended(Ys), 
+                                      angularBackground.create_extended(Yb)], name='AngularProj.'+name )
+    signal_mass_extended = signal_mass.create_extended(Ys)
+    background_mass_extended = background_mass.create_extended(Yb)
+    MassProjec  = zfit.pdf.SumPDF([signal_mass_extended, 
+                                   background_mass_extended], name='MassProj.'+name )
+
+    projections = dict(mass=MassProjec, angular=AngularProjec)
+    if return_2d_Background:
+        projections['background']=BackgroundModel
+
+    if return_angular_signal:
+        projections['angular_signal']=Decay_rate_eff
+
+    if return_efficiency:
+        projections['efficiency'] = efficiency
+
+    if return_1D_models:
+        projections['efficiency']      = efficiency
+        projections['mass_signal']     = signal_mass_extended
+        projections['mass_background'] = background_mass_extended
+        projections['rightSB'] = rightSB        
+        projections['leftSB']  = leftSB
+
+    return CompleteModel, projections
+
+
+
+
+
+def read_efficiency(obs, params, name='', fixed_params=True, previous_name=''):
+    
+    if type(params)==str:
+        params_ = tools.read_json(tools.analysis_path(params))
+    else:
+        params_ = params
+
+    type_ = params_.get('type', 'Bernstein')
+
+    if type_ == 'Bernstein':
+        return read_single_berntsein_polynomial(obs, params, name, fixed_params, previous_name)
+    
+    elif type_=='KDE1DimFFT':
+        return zfit.pdf.KDE1DimFFT(data=np.array(params_['data']['data']),
+                                        obs = obs, 
+                                        weights=np.array(params_['data']['weights']),
+                                        bandwidth=params_['bandwidth'],
+                                        padding=params_['padding'],
+                                        name=name)

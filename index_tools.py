@@ -1,10 +1,12 @@
 import uproot3 as uproot
 import pandas as pd
 import numpy as np
-from flatten_NanoAODs import expand_simple_branches, trg_branches
+from flatten_NanoAODs import expand_simple_branch,expand_simple_branches, trg_branches
 from termcolor import colored, cprint
 from glob import glob
 import cuts
+import os
+import sys
 #import pdb
 #from IPython.core.debugger import set_trace
 
@@ -58,6 +60,7 @@ b_branches = [
     'BToKMuMu_mu1_eta'    , 'BToKMuMu_mu2_eta',
     'BToKMuMu_mu1_isTriggering', 'BToKMuMu_mu2_isTriggering',
              ]
+b_branches = ['BToKMuMu*']
 #class tables():
 
 
@@ -153,7 +156,8 @@ def create_skim(file,
     trigTables=True, 
     softMuons=True, 
     verbose=True,
-    run=None):
+    run=None,
+    nPV=True):
     """Make one single table from each NanoAOD file with information of B tables and possibly Trigger Tables.
     Any other matching must be implemented (e.g. Muons Tables)
 
@@ -194,7 +198,7 @@ def create_skim(file,
     #TODO: CHECK THAT BRANCHES CONTAIN REGEX AND ARE INSIDE FILE
     table = file.arrays(indexes+branches_, outputtype=pd.DataFrame, flatten=True,)
     table.columns = [c.replace(regex+'_', '') for c in table.columns]
-    
+
     if mu_branches:
         mu1_indx = file.array(f'{regex}_l1Idx')
         mu2_indx = file.array(f'{regex}_l2Idx')
@@ -233,11 +237,38 @@ def create_skim(file,
         
     if isMC:
         #print(isMC)
-        gen_mask = create_GEN_cand_mask(file, 
+        if type(isMC)==str:
+            if 'tokstar' in isMC.lower():
+                print(isMC)
+                if isMC.lower().startswith('bdtokstar'):
+                    ccbar_resonance = isMC.lower().replace('bdtokstar','')
+                    gen_mask_pion = create_GEN_cand_BtoKstar(file, 
+                                                        Bmeson=511, 
+                                                        track_match=211, 
+                                                        resonance=ccbar_resonance)
+                    gen_mask_kaon = create_GEN_cand_BtoKstar(file, 
+                                                        Bmeson=511, 
+                                                        track_match=321, 
+                                                        resonance=ccbar_resonance)
+                    gen_mask_pion = pd.Series(gen_mask_pion.flatten(), index=table.index)
+                    gen_mask_kaon = pd.Series(gen_mask_kaon.flatten(), index=table.index)
+                    table['GENCand_pion'] = gen_mask_pion 
+                    table['GENCand_kaon'] = gen_mask_kaon
+
+                elif isMC.lower().startswith('butokstar'):
+                    ccbar_resonance = isMC.lower().replace('butokstar','')
+                    gen_mask = create_GEN_cand_BtoKstar(file, 
+                                                        Bmeson=521, 
+                                                        track_match=211, 
+                                                        resonance=ccbar_resonance)
+                    gen_mask = pd.Series(gen_mask.flatten(), index=table.index)
+                    table['GENCand'] = gen_mask
+            else:             
+                gen_mask = create_GEN_cand_mask(file, 
                             resonance=isMC if isMC in ['JPSI', 'PSI2S'] else None,
                             report=verbose)
-        gen_mask = pd.Series(gen_mask.flatten(), index=table.index)
-        table['GENCand'] = gen_mask
+                gen_mask = pd.Series(gen_mask.flatten(), index=table.index)
+                table['GENCand'] = gen_mask            
         if run:
             table = table.reset_index()    
             table.run = run
@@ -245,12 +276,20 @@ def create_skim(file,
             else : table = table.set_index(indexes)
         
     if trigTables:
-        if type(trigTables)==str:
+        if type(trigTables)==list:
+            trg_branches_ = trigTables
+        elif type(trigTables)==str:
             trg_branches_ = [t for t in trg_branches if trigTables in t]
         else:
             trg_branches_ = trg_branches
         trg = pd.DataFrame(expand_simple_branches(file, trg_branches_, file.array(f'n{regex}')), index=table.index)
         table = table.join(trg)
+
+    if nPV and (b'nPV' in file.keys()):
+        array_nPV = expand_simple_branch(file, 'nPV', file.array('nBToKMuMu'))
+        table['nPV'] = array_nPV
+    elif nPV:
+        print('You do not have this branch (nPV) on your root file!')
 
     if softMuons:
         ini = len(table) 
@@ -261,8 +300,89 @@ def create_skim(file,
     return table
 
 
+def create_GEN_cand_BtoKstar(file, Bmeson=511, track_match=211, resonance='jpsi', report=True):
+    ### INDICES DE KAONES Y MUONES INVOLUCRADOS
+    ### EN EL CANDIDATO
+    kIdx  = file.array('BToKMuMu_kIdx')
+    m1Idx = file.array('BToKMuMu_l1Idx')
+    m2Idx = file.array('BToKMuMu_l2Idx')
+    
+    
+    ##Collection ::: GenPart	interesting gen particles 
+    ## https://cms-nanoaod-integration.web.cern.ch/integration/master/mc94X_doc.html#LHE
+    GenpdgID = file.array('GenPart_pdgId')
+    IdxMother = file.array('GenPart_genPartIdxMother')
+    Muon_genPartIdx = file.array('Muon_genPartIdx')
+    Track_genPartIdx = file.array('ProbeTracks_genPartIdx')
+    
+    #MUONS AND TRACKS MUST BE A GEN PARTICLE (WHO HAS A ANCESTOR)
+    onlyGENparticles = (Track_genPartIdx[kIdx]!=-1) & \
+              (Muon_genPartIdx[m1Idx]!=-1) & \
+              (Muon_genPartIdx[m2Idx]!=-1)
+    
+   
+    trackisMatch = abs(GenpdgID[Track_genPartIdx[kIdx]])==track_match
+    tracksMother_ID = 313 if Bmeson==511 else 323 
+    tracksmotherIdx = IdxMother[Track_genPartIdx[kIdx]]
+    tracksMotherIsKstar  = abs(GenpdgID[tracksmotherIdx])==tracksMother_ID
 
-def create_GEN_cand_mask(file, resonance=None, report=True):
+    #FIRST CHECK IF THE TWO MUONS HAVE GENPDGID = +-13
+    isdimuonSystem = GenpdgID[Muon_genPartIdx[m1Idx]]*GenpdgID[Muon_genPartIdx[m2Idx]]==(-13*13)
+    #MUONS MUST HAVE SAME MOTHER
+    mu1MotherIdx = IdxMother[Muon_genPartIdx[m1Idx]]
+    mu2MotherIdx = IdxMother[Muon_genPartIdx[m2Idx]]
+    dimuonSystem_sameMother = mu1MotherIdx == mu2MotherIdx
+
+    #THE MOTHER OF A MUON MUST BE A Psi(2S), JPsi, or the B
+    dimuon=0
+    if resonance:
+        if resonance.lower()=='jpsi':
+            dimuon = 443
+        elif resonance.lower() in ['psi2s', 'psiprime', 'pisp']:
+            dimuon = 100443
+        else:
+            raise NotImplementedError('POSSIBLE DIMUON SYSTEMS: `jpsi`  `psi2s`')
+    else:
+        dimuon = Bmeson
+    dimuonSystem = abs(GenpdgID[mu1MotherIdx])==dimuon
+
+    #THE GREATMOTHER (IF THERE IS)OF A MUON MUST BE THE SAME AS THE MOTHER 
+    #                                                          OF THE KAON (K*)
+    if resonance:
+        dimuon_kaon_same_Mother = IdxMother[mu1MotherIdx]==IdxMother[tracksmotherIdx]
+    else:
+        dimuon_kaon_same_Mother = mu1MotherIdx==IdxMother[tracksmotherIdx]
+    
+    #THE GREATMOTHER OF ANY FINAL STATE PARTICLE MUST BE A bu(B^+-)
+    is_GEN_B = abs(GenpdgID[IdxMother[tracksmotherIdx]])==Bmeson
+    
+    #DOES THE B CANDIDATE HAVE ANCESTORS?
+    main_B = IdxMother[IdxMother[tracksmotherIdx]]==-1
+    
+    #A TRUE CANDIDATE MUST SATISFY ALL OF THESE:
+    # onlyGENparticles             ----->  PARTICLES MATCHED TO A GEN PARTICLE?
+    # isdimuonSystem & trackisKaon ----->  PARTICLES MATCHED TO MUONS(+-) AND KAON?
+    # dimuonSystem_sameMother      ----->  BOTH MUONS HAVE THE SAME MOTHER?
+    # dimuon_kaon_same_Mother      ----->  DIMUON SYSTEM AND KAON, SAME MOTHER?
+    # is_GEN_B & main_B            ----->  IS THE MOTHER OF DIMUON AND KAON A B+-?  THE B^+ HAS ANCESTORS?
+    GENCandidate = (onlyGENparticles & isdimuonSystem & trackisMatch & tracksMotherIsKstar & \
+                     dimuonSystem_sameMother &  dimuon_kaon_same_Mother & is_GEN_B )#& main_B )
+    if report:
+        #HOW MANY CANDIDATES PER EVENT PASSED THE GENCandidate Mask???
+        BMass = file.array('BToKMuMu_fit_mass')
+        cands_event = BMass[GENCandidate].count()
+        print(f'\n\tNumber of Gen Candidates : {np.sum(cands_event)}')
+        print(f'\n\tNumber of Events         : {len(BMass)}')
+        print(f'\n\tNumber of Candidates     : {np.sum(BMass.count())}')
+        
+        if any(cands_event>1):     
+            cprint(' ----- WARNING\nMore than one candidate per event  -----', 'red', file=sys.stderr)
+    
+    return GENCandidate
+
+
+
+def create_GEN_cand_mask(file, resonance=None, report=True, track_pdgid=321):
     
     ### INDICES DE KAONES Y MUONES INVOLUCRADOS
     ### EN EL CANDIDATO
@@ -286,7 +406,7 @@ def create_GEN_cand_mask(file, resonance=None, report=True):
     #FIRST CHECK IF THE TWO MUONS HAVE GENPDGID = +-13
     isdimuonSystem = GenpdgID[Muon_genPartIdx[m1Idx]]*GenpdgID[Muon_genPartIdx[m2Idx]]==(-13*13)
     #TRACK MUST BE MATCHED TO A GEN  KAON ID = +-321
-    trackisKaon = abs(GenpdgID[Track_genPartIdx[kIdx]])==321
+    trackisKaon = abs(GenpdgID[Track_genPartIdx[kIdx]])==track_pdgid
 
     #MUONS MUST HAVE SAME MOTHER
     mu1MotherIdx = IdxMother[Muon_genPartIdx[m1Idx]]
@@ -372,6 +492,7 @@ def select_cand(df, var, LumiMask=True, verbose=False):
     #Check if there are no repeated indexes
     df = change_repeated_index(df, verbose=verbose)
     
+    if len(df)<=1: return df
     #Create the pd.Series of the number of candidates per event
     if LumiMask:    cands_event = cands_per_event(df[df.LumiMask])
     else:           cands_event = cands_per_event(df)
@@ -453,18 +574,26 @@ def select_cand(df, var, LumiMask=True, verbose=False):
 def read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file, 
                         regex='BToKMuMu',
                         branches = b_branches, 
-                        branches_skim=b_branches):
+                        branches_skim=b_branches,
+                        maxF=-1, skipF=-1,
+                        trigTables=True
+                    ):
+    
+    # Save the list of bad files of a given set
+    bad_files = []
     #If Data is MC I read from NanoAOD
     #Else RealData is already in pd.DataFrames
+    if verbose: print(path)
 
-    if 'RD' in kind and '*' not in path:    
+    if ('RD' in kind) and ('pkl' in path) and (not '*' in path):    
         Data = pd.read_pickle(path)
         Data = cuts.apply_cuts(list_cuts, cuts_json_, Data)
 
-    elif 'RD' in kind and 'pkl' in path:
+    elif ('RD' in kind) and ('*' in path) and ('pkl' in path):
         Data = pd.DataFrame()
         files = glob(path)
         files.sort(reverse=True)
+        files = [f for f in files if f.endswith('pkl')]
         for file in files:
             print(file)
             file_pkl = pd.read_pickle(file)
@@ -481,16 +610,74 @@ def read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branche
                 Data = Data.append(file_pkl)   
 
     else:
-        Data = pd.DataFrame() 
-        for f in glob(path):
+        Data = pd.DataFrame()
+        if path.startswith('root') and not path.endswith('root'):
+            print('XrootD -- XrootD -- XrootD -- XrootD -- XrootD')
+            print('XrootD... getting the list of files')
+            from XRootD import client
+            home_name = '//'.join(path.split('//')[:2])+'/'
+            eos_path = '/'+path.split('//')[2]+'/'
+            eos_path = eos_path.replace('//','/')
+            print(f'Trying with home dir: {home_name}')
+            myclient = client.FileSystem(home_name)
+            print(f'Trying with home name: {eos_path}')
+            status, listing = myclient.dirlist(eos_path)
+            print(f'Total files: {listing.size}')
+            path_list = [f'{home_name}{eos_path}{f.name}' for f in listing]
+            print(path_list[:3])
+            print('XrootD -- XrootD -- XrootD -- XrootD -- XrootD\n\n')
+            
+            
+        elif path.startswith('root') and path.endswith('root'):
+            path_list = [path]
+        
+        elif 'eos' in path and not '*' in path:
+            path_list = glob(os.path.join(path, '*root'))
+            if len(path_list)==0: 
+                import pdb
+                pdb.set_trace()
+            print(f'Total files {len(path_list)}')
+        
+        else:
+            path_list = glob(path)
+        
+        #Clean files that does not end with root (aka Non Root Files!)
+        path_list = [p for p in path_list if (p.endswith('root') or p.endswith('pkl'))]
+        if skipF>0: path_list = path_list[skipF:]
+        if maxF>0 : path_list = path_list[:maxF]
+        
+        for f in path_list:
             if f.endswith('root'):
-                f_ = uproot.open(f)['Events']
+                if verbose: print(f)
+                try:
+                    f__ = uproot.open(f)
+                except OSError:
+                    print('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
+                    print(f'-->>>> file not found -->>> {f}')
+                    print('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
+                    bad_files.append(f)
+                    continue
+                except ValueError:
+                    print('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
+                    print(f'-->>>> Empty file -->>> {f}')
+                    print('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
+                    bad_files.append(f)
+                    continue
+                else:
+                    print('Read File : ', f)
+                f_ = f__['Events']
                 skim_ = create_skim(f_, ['run', 'luminosityBlock', 'event'], 
                             regex, isMC=kind if kind!='RD' else False, verbose=verbose, run=run,
-                            mu_branches=mu_branches, softMuons=False, branches=branches_skim)
+                            mu_branches=mu_branches, softMuons=False, branches=branches_skim, trigTables=trigTables)
                 del f_
-            else:
+            elif f.endswith('pkl'):
                 skim_ = pd.read_pickle(f)
+            else:
+                print('What is this file doing here!!!???')
+                print(f)
+                bad_files.append(f)
+                print('___________________________________')
+                continue
             if apply_cuts_per_file:
                 skim_ = cuts.apply_cuts(list_cuts, cuts_json_, skim_)
             if type(sample_dict)==dict:
@@ -503,18 +690,20 @@ def read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branche
             else: 
                 Data = Data.append(skim_)    
             del skim_
-    return Data
+
+    return Data, bad_files
 
 def dataset_binned(kind='RD', 
                    Bin ='ALL', 
-                   cuts_json=14, 
-                   bins_json=3, 
+                   cuts_json=17, 
+                   bins_json=4, 
                    OneCand='prob',
                    path=None,
                    list_cuts = [
                             'resonance_rejection',
                             'anti_radiation_veto',
-                            'Quality',
+                            #'Quality',
+                            'Quality_medium',
                             'XGB',
                             'missID',
                             'Bpt',
@@ -524,19 +713,26 @@ def dataset_binned(kind='RD',
                             'triggering_muons'],
                    run=None,
                    verbose=False,
-                   mu_branches=['HLT*'],
+                   mu_branches=['HLT*', 'isMedium'],
                    sample_dict=None,
                    apply_cuts_per_file=True,
                    regex='BToKMuMu',
                    branches = b_branches,
                    branches_skim = b_branches,
+                   maxF=-1,
+                   skipF=-1,
+                   return_bad_files=False,
+                   trigTables=True,
                    **kwargs
                   ):
     
     import tools
     import join_split
     
-    
+    debug = kwargs.get('debug', -1)
+    if debug==0: 
+        import pdb
+        pdb.set_trace()
     
     if type(cuts_json)==dict:
         from copy import deepcopy
@@ -563,7 +759,10 @@ def dataset_binned(kind='RD',
                         ],
                  BSLL_priv='DataSelection/NanoAOD/BTOSLL/Aug21/BParkNANO_mc_private_*.root',
                  BSLL_filters='DataSelection/NanoAOD/BTOSLL/FiltersMarch22/BParkNANO_mc_private_*.root', 
-                 PHSP=['DataSelection/NanoAOD/PHSP/Aug21/BParkNANO_mc_private_*.root',
+                 PHSP=['OfficialMC/BuToKMuMu_PHSP_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen/'
+                       'OfficialMC_BuToKMuMu_PHSP_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen/'
+                       '221103_151847/0000/BParkNANO_mc_MonteCarlo_24.root',
+                       'DataSelection/NanoAOD/PHSP/Aug21/BParkNANO_mc_private_*.root',
                        'DataSelection/NanoAOD/PHSP/Dec21/BParkNANO_mc_private_*.root',
                        'DataSelection/NanoAOD/PHSP/Filters1/BParkNANO_mc_private_*.root',
                        'DataSelection/NanoAOD/PHSP/Jan22/BParkNANO_mc_private_*.root'],
@@ -587,15 +786,15 @@ def dataset_binned(kind='RD',
     #Read Data
     if type(path)==str:
         #print(f'Reading data from path: {path}')
-        if glob(path):
-            Data = read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim)
+        if glob(path) or path.startswith('root'):
+            Data , bad_files= read_NanoAOD_PKL(path, list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim, maxF=maxF, skipF=skipF, trigTables=trigTables)
         else:
-            Data = read_NanoAOD_PKL(tools.analysis_path(path), list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim)
+            Data , bad_files= read_NanoAOD_PKL(tools.analysis_path(path), list_cuts, cuts_json_, kind, verbose, run, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim, trigTables=trigTables)
     else:
         Data = pd.DataFrame()
         if not run: run=1
         for indx, path_value in enumerate(path):
-            _data = read_NanoAOD_PKL(tools.analysis_path(path_value), list_cuts, cuts_json_, kind, verbose, run+indx, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim)
+            _data , bad_files= read_NanoAOD_PKL(tools.analysis_path(path_value), list_cuts, cuts_json_, kind, verbose, run+indx, mu_branches, sample_dict, apply_cuts_per_file, regex, branches, branches_skim, trigTables=trigTables)
             #print(_data)
             Data = Data.append(_data)
             del _data
@@ -611,17 +810,22 @@ def dataset_binned(kind='RD',
     Data = Data.sort_index()
     #Split data in q2 bins
     if Bin=='Complete':
-        return Data
+        DataRet = Data
     elif type(Bin)==str and Bin.lower()=='jpsi':
-        return Data[(2.8<=Data.DiMuMass) & (Data.DiMuMass<=3.4)]
+        DataRet = Data[(2.8<=Data.DiMuMass) & (Data.DiMuMass<=3.4)]
     elif type(Bin)==str and Bin.lower()=='psi2s':
-        return Data[(3.5<=Data.DiMuMass) & (Data.DiMuMass<=3.9)]
+        DataRet = Data[(3.5<=Data.DiMuMass) & (Data.DiMuMass<=3.9)]
     else:
         Binned_Data = join_split.only_split(Data, bins_json_)
         if Bin=='ALL':
-            return Binned_Data
-        return Binned_Data[Bin]
+            DataRet =  Binned_Data
+        else:
+            DataRet = Binned_Data[Bin]
+
     
+    if return_bad_files:
+        return DataRet, bad_files
+    else: return DataRet
     
 
     
@@ -647,7 +851,8 @@ def create_gen_df(ntuple,
 
     Dimuonp4 = Mu1p4+Mu2p4
     
-    run, lumi, event = ntuple.arrays(['run', 'luminosityBlock', 'event'], outputtype=tuple)
+    run, lumi, event = ntuple.arrays(['run', 'luminosityBlock', 'event'], 
+                                     outputtype=tuple)
     cosThetaKMu = ntuple.array('costhetaKLJ')
     
     df = pd.DataFrame.from_dict(dict(
@@ -692,7 +897,7 @@ def gen_dataset_binned(
         return Data
     
     #Split data in q2 bins
-    Binned_Data = join_split.only_split(Data, bins_json_)
+    Binned_Data = join_split.only_split(Data, bins_json_, mmk_fit=False)
     if Bin=='ALL':
         return Binned_Data
     else:

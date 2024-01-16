@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mplhep as hep
 import seaborn as sns
+from matplotlib import colors as pltcolors
 plt.style.use(hep.style.CMS)
 
 #hep.CMS.label(<text>, data=<True|False>, lumi=50, year=2017)
@@ -19,6 +20,9 @@ from copy import deepcopy
 import pdb
 import tools 
 import json
+from scipy import stats
+import customStats
+from customStats import chi2_histogram
 
 def histos_opts(v=0):
     with open(tools.analysis_path(f'scripts/histograms_binning/v{v}.json'), 'r') as jj:
@@ -50,13 +54,17 @@ pretty_names = dict(
     fit_k_eta = '$K^+ \eta$',
     fit_l1_eta = r'$\mu_{1} \eta$',
     fit_l2_eta = r'$\mu_{2} \eta$',
+    L_XGB = r'$XGB_{out}$',
+    XGB = r'$XGB_{out}$',
+    k_min_dr_trk_muon = r'$dR_{min} (Track, Tracker muons)$',
+    InvMassMissID = r'$mass(\;Track(m=\mu),\; \mu\;)$'
 )
 
 
 ######################################## WEIGHTED 1D HISTOGRAMS  ########################################
-def mask_inBin(data, bin_edges, index):
-    events_in = (data>= bin_edges[index])  & (data< bin_edges[index+1])
-    return events_in
+#def mask_inBin(data, bin_edges, index):
+#    events_in = (data>= bin_edges[index])  & (data< bin_edges[index+1])
+#    return events_in
 
 def mask_underflow(data, bin_edges):
     events_in = (data< bin_edges[0])
@@ -67,44 +75,37 @@ def mask_overflow(data, bin_edges):
     return events_in
 
 
-def hist_weighted(data, bins, weights=None, axis=None, only_pos=False, density=False, **kwargs):    
 
-    supported_types = [np.ndarray, pd.Series]
-    #Here it tries to set weigths=1 when user does not pass them
-    #Likely to break if input is not np.array
+
+
+def hist_weighted(data, bins, weights=None, axis=None, only_pos=False, density=False, **kwargs):    
+    
+    supported_types = [np.ndarray, pd.Series]    
     if not type(weights) in supported_types:
         if weights==None:
             weights = np.ones_like(data)
-            
-            
+    
+    
     if 'range' in kwargs:
-        hist_opts = {'range':kwargs['range']}
+        range_ = kwargs['range']
         del kwargs['range']
     else:
-        hist_opts = {}
+        range_ = None
     
-    counts, bin_edges = np.histogram(data, bins=bins, **hist_opts)
+    histo_www = customStats.histogram_weighted(data,
+                                             bins,
+                                             weights=weights,
+                                             density=density, 
+                                             range=range_)
+    counts_weighted, bin_edges, errors_weighted = histo_www
     
-    bins = len(counts)
-    bin_mean = (bin_edges[1:]+bin_edges[:-1])/2 
-    bin_size = bin_edges[1]-bin_edges[0]
     
     events_under = mask_underflow(data, bin_edges)
     events_over  = mask_overflow(data,  bin_edges)
     
-    counts_weighted = np.zeros_like(counts, dtype=float)
-    errors_weighted = np.zeros_like(counts, dtype=float)
+    bin_mean = (bin_edges[1:]+bin_edges[:-1])/2 
+    bin_size = bin_edges[1]-bin_edges[0]
     
-    for i in range(bins):
-        events_in = mask_inBin(data, bin_edges, i)
-        counts_weighted[i] = np.sum(weights[events_in])
-        errors_weighted[i] = np.sqrt(np.sum(np.power(weights[events_in], 2)))
-    
-    if density:
-        sum_w            = np.sum(counts_weighted)
-        counts_weighted /= (sum_w*bin_size)
-        errors_weighted /= (sum_w*bin_size)
-        
     if  only_pos:
         non_zero        = counts_weighted>0
         bin_mean        = bin_mean[non_zero] 
@@ -249,7 +250,7 @@ def hist(data:'array like data',
                            width=bin_size, 
                            **kwargs)
         elif hist_type=='error':
-            y_err = np.sqrt(counts)
+            #y_err = np.sqrt(counts)
             if hist_opts.get('density', False):
                 len_ = data[(data>=bin_edges[0]) & (data<=bin_edges[-1])]
                 y_err /= (len_*bin_size)
@@ -286,7 +287,7 @@ def rebin_data(heights, bin_edges, join_n_bins=1, how='right'):
     return np.array(new_heights), np.array(new_bin_edges)
 
     
-def hist_from_heights(heights, bin_edges, axis=None, histtype='bar', join_n_bins=1, how='right', **kwargs):
+def hist_from_heights(heights, bin_edges, axis=None, histtype='bar', join_n_bins=1, how='right', yerr=[], **kwargs):
     
     #TODO
     #if len(heights)==len(bin_edges)+1:
@@ -295,10 +296,21 @@ def hist_from_heights(heights, bin_edges, axis=None, histtype='bar', join_n_bins
         heights_tmp, bin_edges_tmp = rebin_data(heights, bin_edges, join_n_bins=join_n_bins, how='right')
     else: 
         heights_tmp, bin_edges_tmp = heights, bin_edges
+        
+    if histtype=='errorbar':
+        if len(yerr)==0:
+            yerr = np.sqrt(heights_tmp)
+        bin_mean = (np.array(bin_edges_tmp[1:])+np.array(bin_edges_tmp[:-1]))/2
+        width = np.array(bin_edges_tmp[1:])-np.array(bin_edges_tmp[:-1])
+        if axis:
+            fig = axis.errorbar(bin_mean, heights_tmp, xerr=width/2, yerr=yerr,**kwargs)
+        else:
+            print(kwargs)
+            fig = plt.errorbar(bin_mean, heights_tmp, xerr=width/2, yerr=yerr, **kwargs)       
 
     if histtype=='bar':
         bin_mean = (bin_edges_tmp[1:]+bin_edges_tmp[:-1])/2
-        width = bin_edges_tmp[1]-bin_edges_tmp[0]
+        width = np.array(bin_edges_tmp[1:])-np.array(bin_edges_tmp[:-1])
         if axis:
             fig = axis.bar(bin_mean, heights_tmp, width=width, **kwargs)
         else:
@@ -418,6 +430,25 @@ def create_axes_for_pulls(fig, split = 70, space_between = 2):
     return ax, axp
 
 
+def create_axes_for_pulls2(fig, split1 = 50, split2=75, space_between = 2):
+    
+    ax  = plt.subplot2grid(shape = (100,1), loc = (0,0),
+                           rowspan = split1, fig = fig)
+    
+    axp = plt.subplot2grid(shape = (100,1), loc = (split1+space_between,0),
+                           rowspan = 100-(split2+space_between), fig = fig)
+    
+    axp2 = plt.subplot2grid(shape = (100,1), loc = (split2+space_between,0),
+                           rowspan = 100-(split2+space_between), fig = fig)
+    
+    axp.get_shared_x_axes().join(axp, ax)
+    axp2.get_shared_x_axes().join(axp2, ax)
+    
+    ax.set_xticklabels([])
+    axp.set_xticklabels([])
+    
+    return ax, axp, axp2
+
 
 def create_grid_for_pulls(fig, nrows, ncols, 
     space_between=2, 
@@ -512,20 +543,30 @@ def textParams2(minimum, ncol=2, clean=True):
     return texts
 
 
-def textParams(minimum, ncol=2, clean=True):
+def textParams(minimum, ncol=2, clean=True, params='All'):
     texts = ['' for c in range(ncol)]
-    n_params = len(minimum.params)
-    
-    for indx_p, (param, result_) in enumerate(minimum.params.items()):
-        
+    if type(params)==str and params=='All':
+        n_params = len(minimum.params)
+        params_to_print = list(minimum.params.keys())
+    elif type(params)==list:
+        n_params = len(params)
+        params_to_print = params
+
+    indx_p=0
+    for param in params_to_print:
+        result_ = minimum.params[param]
         col = indx_p%ncol
         text=''
         param_value = minimum.params[param]['value']
         
         if 'minuit_hesse' in result_: err = result_['minuit_hesse']['error']
         elif 'hesse_np' in result_: err = result_['hesse_np']['error']
+        elif 'hesse' in result_: err = result_['hesse']['error']
         else: err = -1
         r=1
+        if (err*err).real<0: 
+            err = (err*err).real
+            print('Complex Errors!')
         
         if clean or (param.name.startswith('$') and param.name.endswith("$")):
             name = param.name
@@ -534,9 +575,12 @@ def textParams(minimum, ncol=2, clean=True):
             name = '$'+'_'.join(name)+'$'
             if name[0]!='$': name = '$'+name
 
-        if err<0:
+        if err<0 and param_value>0:
             r += 1+int(np.round(-np.log10(np.abs(param_value))))
-
+        
+        elif err<0 and param_value==0:
+            r = 1
+            
         elif err<1:
             r += int(np.round(-np.log10(np.abs(err))))
 
@@ -562,6 +606,8 @@ def textParams(minimum, ncol=2, clean=True):
             text+='\n'
 
         texts[col]+=text
+
+        indx_p+=1
         
     texts = [t.strip() for t in texts]
         
@@ -669,7 +715,7 @@ def textParams_from_model(model, ncol=1, clean=True):
 
 
 
-def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_expected_evts=False, ignore_yield=False):
+def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_expected_evts=True, ignore_yield=False):
 
     try:
         pdf.norm_range.spaces
@@ -682,8 +728,11 @@ def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_e
     bin_mean = (h[1][1:]+h[1][:-1])/2
     bin_sz = h[1][1]-h[1][0]
     n_events = np.sum(h[0])
-    y_err = np.sqrt(h[0]*(1-h[0]/n_events))
+    #y_err = np.sqrt(h[0]*(1-h[0]/n_events))
     y_err = np.sqrt(h[0])
+    if type(h[2]) in [np.ndarray]:
+        print('Using errors from histogram . . . ')
+        y_err = h[2]
 
     if pdf.is_extended and ignore_yield==False:
         scale_events = pdf.get_yield().value().numpy()
@@ -693,7 +742,7 @@ def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_e
     binned_model = bin_model(pdf, h[1], integrate=integrate)
     expected_events = binned_model * scale_events
     #pull = (h[0]-expected_events)/np.sqrt(expected_events)
-    pull = (h[0]-expected_events)/np.sqrt(h[0])
+    pull = (h[0]-expected_events)/y_err
     axis.errorbar(bin_mean, pull, yerr=1, ls='none', capsize=1, color='black')
     axis.scatter(bin_mean, pull, color='black', s=40)
     axis.plot(limits, [3,3], ls='--', color='grey')
@@ -711,7 +760,7 @@ def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_e
     axis.set_xlabel(xlabel)
     
     mask_ = h[0]>0
-    denominator = h[0][mask_]
+    denominator = np.power(y_err[mask_],2)
     #denominator = expected_events[mask_]
     if return_chi2:
         if return_expected_evts:    
@@ -759,7 +808,7 @@ def plot_projection(data, model, var_to_integrate, axis, bins=70,  return_chi2 =
     elif pulls:
         axis.set_xticks([])
         print(pdf.obs[0], pdf.norm_range.limit1d)
-        chi2 = plot_pull(h, pdf, pdf.obs[0], axis_pulls, return_chi2=True,)
+        chi2, h_expected = plot_pull(h, pdf, pdf.obs[0], axis_pulls, return_chi2=True,)
         if print_chi2_dof:
             dof_int = bins-len(pdf.params) if not print_params else bins-len(print_params.params)
             dof_int -=1
@@ -865,10 +914,11 @@ def model_has_fracs(model):
         return False
     
 
-def bin_model(model, bins=20, integrate=False, verbose=True, center=True):
+def bin_model(model, bins=20, integrate=False, verbose=False, center=True):
 
     # Find out if bins is a list or an integer
     # Missing escalating when model is extended
+    print('bin_model!')
     if type(bins) in [list, np.ndarray]:
         h1 = np.array(bins)
     else:
@@ -881,9 +931,9 @@ def bin_model(model, bins=20, integrate=False, verbose=True, center=True):
         for i in range(len(h1)-1):
             #pdb.set_trace()            
             try:
-                integration = model.integrate(limits=[h1[i],h1[i+1]]).numpy()[0]
+                integration = model.numeric_integrate(limits=[h1[i],h1[i+1]]).numpy()[0]
             except IndexError:
-                integration = model.integrate(limits=[h1[i],h1[i+1]]).numpy()
+                integration = model.numeric_integrate(limits=[h1[i],h1[i+1]]).numpy()
             binned[i] = integration
             if verbose : print(f'   Bin {i}, {integration}')
     else:
@@ -898,7 +948,7 @@ def bin_model(model, bins=20, integrate=False, verbose=True, center=True):
     return binned
 
 def plot_model(data, 
-               pdf,
+               model,
                axis=None, 
                bins=70,  
                return_chi2 = False, 
@@ -910,7 +960,7 @@ def plot_model(data,
                print_chi2_dof=True, 
                params_text_opts = dict(x=0.6, y=0.4, ncol=1, fontsize=15), 
                remove_string='',
-               main_kwargs=dict(),
+               main_kwargs=dict(color='black', linewidth=2),
                data_kwargs=dict(capsize=2, 
                                 color='black', 
                                 ms=20),
@@ -921,10 +971,14 @@ def plot_model(data,
                regex='',
                ignore_yield=False, 
                integrate=False, 
+               filled=True,
+               stacked=False,
+               ignore_model_binning=False,
+               print_pvalue=True,
                **kwargs):
     """ Tries to be an all-in-one 1D-plotting for (~kind of) HEP style.
         Can create pulls given a binning, and also evaluate chi2/DOF
-            - where DOF = (nbins-1)-params
+            - where DOF = nbins-params
         Also can print the fitted params with its error as given by a 
             zfit.minimizers.fitresult.FitResult
         It incorporates many dictionaries to customize the settings.
@@ -950,6 +1004,11 @@ def plot_model(data,
     chi2: float
         chi2 evaluated from the binning and taking into account bins with counts>0
     """
+    if 'BinnedFromUnbinnedPDF' in str(type(model)):
+        pdf = model.pdfs[0]
+    else:
+        pdf = model
+        
     if not axis:
         fig,axis = plt.subplots()
     try:
@@ -961,8 +1020,18 @@ def plot_model(data,
         limits = pdf.norm_range.limit1d
     if np.all(weights=='none'):
         weights = np.ones_like(data)
+    
+    if 'BinnedFromUnbinnedPDF' in str(type(model)) and not ignore_model_binning:
+        print('Ignoring Bins since you passed a binned model!')
+        edges_ = model.space.binning[0].edges
+        #h = np.histogram(data, bins=edges_, weights=weights)
+        h = customStats.histogram_weighted(data, bins=edges_, weights=weights)
+    else:
+        if 'BinnedFromUnbinnedPDF' in str(type(model)):
+            print('Ignoring binning from binned model!')
+        #h = np.histogram(data, bins=bins, range=limits, weights=weights)
+        h = customStats.histogram_weighted(data, bins=bins, range=limits, weights=weights)
 
-    h = np.histogram(data, bins=bins, range=limits, weights=weights)
     bin_mean = (h[1][1:]+h[1][:-1])/2
     bin_size = h[1][1]-h[1][0]
     n_events = np.sum(h[0])
@@ -972,7 +1041,7 @@ def plot_model(data,
     else:
         scale = np.sum(np.diff(h[1])*h[0])
     print(scale)
-    y_err = np.sqrt(h[0]*(1-h[0]/n_events))
+    y_err = h[-1]#np.sqrt(h[0]*(1-h[0]/n_events))
     mask_ = h[0]>0
     
     axis.errorbar(bin_mean[mask_], 
@@ -996,6 +1065,10 @@ def plot_model(data,
 
     x = np.linspace(limits[0], limits[1], 1000)
     model_name = kwargs.get('pdf_name', pdf.name)
+    #if 'label' in kwargs:
+    #    model_name = kwargs['main_label']
+    #    del kwargs['main_label']
+        
     if 'fill' in main_kw:
         del main_kw['fill']
         axis.fill(x, pdf.pdf(x)*scale, zorder=1000,
@@ -1016,19 +1089,45 @@ def plot_model(data,
         raise NotImplementedError('PDF has no componets')
         
     elif plot_components:
-        hatces     = ['', '', '--']
-        facecolors = ['lightcoral', 'lightblue', 'palegreen']
-        edgecolors = ['orangered' , 'dodgerblue', 'darkgreen']
-        zorders    = [50,20,5] 
-        for i in range(len(pdf.pdfs)):
+        try:
+            pdfs_list = pdf.pdfs
+        except NotImplementedError as e:
+            print(e)
+            pdfs_list = []
+        hatces     = ['', '', '--', '\\', '///', '', '', '']
+        edgecolors = ['red', 'blue', 'green', 'orange', 'magenta', 'violet', 'cyan', 'lime']
+        #facecolors = ['lightcoral', 'lightblue', 'palegreen', 'purple']
+        #edgecolors = ['orangered' , 'dodgerblue', 'darkgreen', 'darkviolet']
+        zorders    = [50,20,5, 1] 
+        previous_vals = np.zeros_like(x)
+        for i in range(len(pdfs_list)):
             model = pdf.pdfs[i]
             if model_has_fracs(pdf): frac = pdf.fracs[i]
             else: frac = 1
             if 'decay' in model.name.lower(): name = 'Angular Signal'
             else : name=model.name.replace('_extended', '')
-            axis.fill_between(x, model.pdf(x)*scale*frac, alpha=0.6,
-                    facecolor=facecolors[i], hatch=hatces[i], 
-                    edgecolor=edgecolors[i], label=name,
+            facecolor = list(pltcolors.to_rgba(edgecolors[i]))
+            facecolor[-1] = 0.4
+            if filled:
+                if stacked:
+                    axis.fill_between(x, previous_vals+model.pdf(x)*scale*frac, previous_vals, # alpha=0.6,
+                        facecolor= facecolor, 
+                        hatch = hatces[i], 
+                        edgecolor=edgecolors[i], 
+                        label=name,
+                        zorder = zorders[i])
+                    previous_vals+=model.pdf(x)*scale*frac
+                else:
+                    axis.fill_between(x, model.pdf(x)*scale*frac, previous_vals, # alpha=0.6,
+                        facecolor= facecolor, 
+                        hatch = hatces[i], 
+                        edgecolor=edgecolors[i], 
+                        label=name,
+                        zorder = zorders[i])
+            else:
+                axis.plot(x, model.pdf(x)*scale*frac, # alpha=0.6,
+                    color=edgecolors[i], 
+                    label=name,
                     zorder = zorders[i])
             #level=2
             if model_has_pdfs(model) and level==2 and regex in model.name.lower():
@@ -1058,10 +1157,14 @@ def plot_model(data,
             elif len(_)==1: _ = _[0]
             else: _ = _[i]
             return _
+        params_to_print = params_text_opts.pop('params', 'All')
         if type(print_params)==bool:
-            texts = textParams_from_model(pdf, params_text_opts.get('ncol', 2))
+            texts = textParams_from_model(pdf, 
+                                          params_text_opts.get('ncol', 2),
+                                          params=params_to_print)
         else:
-            texts = textParams(print_params, params_text_opts.get('ncol', 2))
+            texts = textParams(print_params, params_text_opts.get('ncol', 2),
+                               params=params_to_print)
         print(texts)
         x = params_text_opts.get('x',None)
         y = params_text_opts.get('y',None)
@@ -1069,12 +1172,13 @@ def plot_model(data,
         if 'y' in params_text_opts: del params_text_opts['y']
         if 'ncol' in params_text_opts: del params_text_opts['ncol']
         
+        verticalalignment = params_text_opts.pop("va", "top") 
         for i, text in enumerate(texts):
             if remove_string: text = text.replace(remove_string, '')
             x_ = get_opt_indx(x, i)
             y_ = get_opt_indx(y, i)
             axis.text(x_, y_, text, 
-                      transform = axis.transAxes, **params_text_opts
+                      transform = axis.transAxes, va=verticalalignment, **params_text_opts
                      )
 
     
@@ -1105,20 +1209,37 @@ def plot_model(data,
     if pulls and not axis_pulls:
         raise NotFoundError('You need to pass another axis for the pulls ')
     elif pulls:
-        chi2 = plot_pull(h, pdf, xlabel, axis_pulls, return_chi2=True, return_expected_evts=return_expected_evts, ignore_yield=ignore_yield, integrate=integrate)
-        if type(chi2) in [list, tuple] : chi2, expected_events = chi2
+        chi2 = plot_pull(h, pdf, xlabel, axis_pulls, 
+                         return_chi2=True, 
+                         return_expected_evts=return_expected_evts, 
+                         ignore_yield=ignore_yield, 
+                         integrate=integrate)
+        if type(chi2) in [list, tuple] : 
+            chi2, expected_events = chi2
         if print_chi2_dof:
             n_params = len(pdf.params)
             if print_params and type(print_params)!=bool:
                 n_params = len(print_params.params)
-            zero_count_bins = np.sum(h[0]<=0)
-            dof_int = bins-n_params-zero_count_bins
+            non_zero_count_bins = np.sum(h[0]>0)
+            dof_int = non_zero_count_bins-n_params
             #dof_int -=1
             #print(chi2)
-            tex_chi = r'$ \chi^2 /DOF$ = ' +f'{round(chi2,3)}/{dof_int} = {round(chi2/dof_int,3)}'
+            tex_chi = r'$ \chi^2 /DOF$ = ' 
+            tex_chi+= f'{round(chi2,3)}/{dof_int} = {round(chi2/dof_int,3)}'
             #chi_x, chi_y = kwargs.get('chi_x', 0.5),  kwargs.get('chi_y', 0.5)
-            axis.text( chi_x, chi_y , tex_chi, va='bottom', ha=kwargs.get('ha_chi', 'left'),
-                      fontsize=kwargs.get('fontsize_chi2', 18), zorder=kwargs.get('chi_zorder', 100), transform = axis.transAxes)
+            axis.text( chi_x, chi_y , tex_chi, va='bottom', 
+                      ha=kwargs.get('ha_chi', 'left'),
+                      fontsize=kwargs.get('fontsize_chi2', 18), 
+                      zorder=kwargs.get('chi_zorder', 100), 
+                      transform = axis.transAxes)
+            if print_pvalue:
+                p_value   = 1-stats.chi2.cdf(float(chi2), dof_int)
+                text_pval = r'$p_{value}$ = ' + str(round(p_value, 3))
+                axis.text( chi_x, chi_y*0.93 ,text_pval, va='bottom', 
+                           ha=kwargs.get('ha_chi', 'left'),
+                           fontsize=kwargs.get('fontsize_chi2', 18)*0.93, 
+                           zorder=kwargs.get('chi_zorder', 100), 
+                          transform = axis.transAxes)
         if return_expected_evts:
             return h, chi2, expected_events
         else:       
@@ -1129,7 +1250,7 @@ def plot_model(data,
             binned_pdf = bin_model(pdf, h[1])
             expected_events = binned_pdf*n_events
             #chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/expected_events[mask_])
-            chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/h[0][mask_])
+            chi2 = np.sum(np.power(h[0][mask_]-expected_events[mask_],2)/h[-1][mask_])
             return h, chi2
         return h
     
@@ -1310,7 +1431,7 @@ def plot_measurement_q2(mean, error, bins, q2_width, q2_mean, axis, poi='afb', y
     
     
 #///////
-    
+
 def compare_plot(Data_Num,
                  Data_Den,
                  weights_Num=None,
@@ -1329,7 +1450,9 @@ def compare_plot(Data_Num,
                  low_xlabel='',
                  low_ylim = [0,2],
                  ylim = None,
-                 ks_t  = 'cut', 
+                 ks_t  = False,
+                 chi2_test= True, 
+                 return_chi2_val=False,
                  out_dir=None,
                  out_name='',
                  axes = [None, None],
@@ -1337,7 +1460,8 @@ def compare_plot(Data_Num,
                  show=False,
                  return_k_val=False,
                  lower_lines=True,
-                 xlim_tight=False,
+                 xlim_tight=False,\
+                 params_axes_for_pulls =dict( split = 70, space_between = 2),
                  ):
     """Plot two samples as histograms with same binning and evaluate the ratio of their hieghts,
     if both samples came from the distribution the ratio should be distributied uniformly
@@ -1357,7 +1481,7 @@ def compare_plot(Data_Num,
     else:
         fig = plt.figure()
         fig.suptitle(title, y=0.93)
-        _main, _lower = create_axes_for_pulls(fig)
+        _main, _lower = create_axes_for_pulls(fig, **params_axes_for_pulls)
     
 
     
@@ -1379,7 +1503,7 @@ def compare_plot(Data_Num,
                              **opts_Den_plot,
                              **opts_commons)
     
-    
+    ## To be removed! Not really useful
     if ks_t=='cut':
         low_cut = np.max([
                     Histo_Num[1][0],
@@ -1403,20 +1527,36 @@ def compare_plot(Data_Num,
                                                      if np.all(weights_Num) else None,
             weights_Den[(Data_Den>=low_cut) & (Data_Den<=upp_cut)] \
                                                     if np.all(weights_Den) else None,)
+    
     elif ks_t:
         ks_ = ks_test.ks_2samp_weighted(
             Data_Num,    Data_Den,
             weights_Num, weights_Den )
     else:
         ks_ = None
-    label_title = 'KS $p_{val}$ = '+ str(round(ks_[1], 4)) if ks_ else None
+
+    if chi2_test:
+        chi2_res = chi2_histogram(Data_Num,    Data_Den,
+                                  weights_Num, weights_Den, 
+                                  ensure_positive_counts=False, 
+                                  bins=Histo_Num[1])
+        chi2_v, dof_v, chi2_p = chi2_res
+
+    else:
+        chi2_v, dof_v, chi2_p = None, None, None
+    
+    
+    label_title_ks   = 'KS $p_{val}$ = '+ str(round(ks_[1], 4)) if ks_ else None
+    label_title_chi2 = r'$\chi^2$ $p_{val}$ = '+ str(round(chi2_p, 4)) if chi2_p else None
+    labels = [label_title_ks, label_title_chi2]
+    label_title =  '\n'.join([lbl for lbl in labels if lbl])
     if label_Den or label_Num:
         if axes[0] and axes[0].get_legend():
             previous_title = axes[0].get_legend().get_title().get_text()
             if previous_title: 
                 label_title = previous_title+'\n'+label_title
             
-        _main.legend(frameon=True, title=label_title, fontsize=18)
+        _main.legend(frameon=True, title=label_title, fontsize=16, title_fontsize=20)
     if ylim=='zero':
         _main.set_ylim(ymin=0)
     elif ylim:
@@ -1484,6 +1624,9 @@ def compare_plot(Data_Num,
     
     if return_k_val:
         to_return.append(ks_[1])
+    
+    if return_chi2_val:
+        to_return.append(chi2_p)
         
     if show:
         plt.show()
@@ -1493,6 +1636,96 @@ def compare_plot(Data_Num,
         return to_return
         
 
+
+
+def double_compare_plot(denominator,
+                        numerator1,
+                        numerator2,
+                        weights_Den=None,
+                        weights_Num1=None,
+                        weights_Num2=None,
+                        label_Den='',
+                        label_Num1='',
+                        label_Num2='',
+                        operation='ratio',
+                        hist_opts=dict(bins=50),
+                        pval = 'chi2',
+                        density=True,
+                        figsize=[10,8]):
+
+    fig = plt.figure(figsize=figsize)
+    main, ax1, ax2 = create_axes_for_pulls2(fig)
+
+    if pval == 'chi2':
+
+      chi2_1, dof_1, pval_1 = chi2_histogram(denominator, numerator1,
+                                    weights1=weights_Den,
+                                    weights2=weights_Num1,
+                                    **hist_opts)
+      label_Num1 += r'   $p_{val}$ = '+ f'{round(pval_1,3)}'
+
+      chi2_2, dof_2, pval_2 = chi2_histogram(denominator, numerator2,
+                                      weights1=weights_Den,
+                                      weights2=weights_Num2,
+                                      **hist_opts)
+      label_Num2 += r'   $p_{val}$ = '+ f'{round(pval_2,3)}'
+
+
+
+    Histo_Den = hist_weighted(denominator,
+                              **hist_opts,
+                              weights=weights_Den,
+                                axis=main,
+                               density=density,
+                              label = label_Den)
+
+    Histo_Num1 = hist_weighted(numerator1,
+                              bins=Histo_Den[1],
+                              weights=weights_Num1,
+                              axis=main,
+                              density=density,
+                              label = label_Num1 ,)
+
+    Histo_Num2 = hist_weighted(numerator2,
+                              bins=Histo_Den[1],
+                              weights=weights_Num2,
+                              axis=main,
+                              density=density,
+                              label = label_Num2)
+
+    bin_size = Histo_Den[1][1]-Histo_Den[1][0]
+    if density:
+      main.set_ylabel(f'Density / {str(round(bin_size, 4))}')
+    else:
+      main.set_ylabel(f'Counts / {str(round(bin_size, 4))}')
+
+    bin_mean = (Histo_Den[1][1:]+Histo_Den[1][:-1])/2
+    bin_size_h = (Histo_Den[1][1:]-Histo_Den[1][:-1])/2
+
+    ratio1 = Histo_Num1[0]/Histo_Den[0]
+    ratio2 = Histo_Num2[0]/Histo_Den[0]
+
+    error1 = ratio1*np.hypot(Histo_Num1[-1]/Histo_Num1[0], Histo_Den[-1]/Histo_Den[0])
+    error2 = ratio2*np.hypot(Histo_Num2[-1]/Histo_Num2[0], Histo_Den[-1]/Histo_Den[0])
+
+    finite_mask = np.isfinite(ratio1)
+    error1[np.isnan(error1)] = 0
+    error2[np.isnan(error2)] = 0
+
+    ax1.errorbar(bin_mean[finite_mask],
+                    ratio1[finite_mask],
+                    xerr=bin_size_h[finite_mask],
+                    #label=r'$p_{val}$ = '+ f'{round(pval_1,3)}',
+                    yerr=error1[finite_mask])
+
+    finite_mask = np.isfinite(ratio2)
+    ax2.errorbar(bin_mean[finite_mask],
+                    ratio2[finite_mask],
+                    xerr=bin_size_h[finite_mask],
+                    #label=r'$p_{val}$ = '+ f'{round(pval_2,3)}',
+                    yerr=error2[finite_mask])
+
+    return fig, main, ax1, ax2                                       
 
 
 

@@ -194,7 +194,13 @@ def minimize_models(data, models, obs, hesse=True, return_nlls=False, weights='n
         #any_param_floating = any(list([p.floating for p in model.params.values()]))
         #if any_param_floating:
         minuit = zfit.minimize.Minuit()
-        minimize = minuit.minimize(nlls[deg])
+        try:
+            minimize = minuit.minimize(nlls[deg])
+        except RuntimeError:
+            print('Minimization failed continuing...')
+            zfit.util.cache.clear_graph_cache()
+            minimums[deg] = None
+            continue
         print(minimize)
         if hesse:
             try:
@@ -456,7 +462,7 @@ def get_best_Ftest_model_(data, models, obs, nbins, name,
     #                                           strategy=strategy,
     #                                           out_dir=out_dir)
     best_model, best_deg,  chi2_list, chi2_dof = evaluate_best_Ftest(data, models, minimums,
-                                              nbins=20, 
+                                              nbins=nbins, 
                                               weights=weights, 
                                               display=display,
                                               strategy=strategy,
@@ -471,7 +477,6 @@ def get_best_Ftest_model_(data, models, obs, nbins, name,
         if return_minimum:
             return best_model, best_deg_minimum, minimums
         return best_model
-    
     if family=='bernstein':
         coefsR = list()
         for i in range(best_deg+1):
@@ -549,7 +554,7 @@ def get_best_Ftest_model(data, models, obs, nbins, name,
 
 
     best_model, best_deg,  chi2_list, chi2_dof = evaluate_best_Ftest(data, models, minimums,
-                                              nbins=20, 
+                                              nbins=nbins, 
                                               weights=weights, 
                                               display=display,
                                               strategy=strategy,
@@ -566,7 +571,6 @@ def get_best_Ftest_model(data, models, obs, nbins, name,
             return best_model, best_deg_minimum, minimums
         return best_model
     
-
     if family=='bernstein':
         coefsR = list()
         for i in range(best_deg+1):
@@ -580,6 +584,7 @@ def get_best_Ftest_model(data, models, obs, nbins, name,
                                          best_val, 
                                          #0, 10, 0.0001
                                         ) )
+        
         new_model_ = bernstein(coefsR, obs, name=name)
 
         
@@ -629,8 +634,8 @@ def get_best_Ftest_model(data, models, obs, nbins, name,
     
 
     
-    
-def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', weights='none', display=True, out_dir=None, type_='phsp', Bin=''):
+
+def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', weights='none', display=True, out_dir=None, type_='phsp', Bin='', pval_chi2_min=0.05):
     """Evaluates the chi2 of each model given binned data with nbins uniform bins.
      Meant to be used after `minimize_models_refit`
      It also selects the best model given an `strategy`
@@ -647,6 +652,7 @@ def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', wei
     print('MODELS::: ', models)
     chi2_list = list()
     chi2_dof  = list() 
+    p_Vals_chi= dict()
     for new_model, key,  minimum in zip(models.values(),minimums.keys(), minimums.values()):
 
         fig = plt.figure(figsize=[10,10])
@@ -676,28 +682,48 @@ def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', wei
         plt.close()
 
         chi2_list.append(chi2)
-        dof = nbins-len(minimum.params)
+        if minimum:
+            dof = nbins-len(minimum.params)
+        else:
+            dof = nbins - 1
         chi2_dof.append(chi2/dof)
         chi2_list.append(chi2)
+        p_Vals_chi[key] = 1-stats.chi2.cdf(float(chi2), dof)
 
     chi2_list = np.array(chi2_list)
     chi2_dof  = np.array(chi2_dof)
+    
 
 
 
 
-
+    #Find out if any model passed the minimum requirement
+    #print('Min  : ', pval_chi2_min)
+    p_Vals_chi_vals = np.array(list(p_Vals_chi.values())) 
+    if not any(p_Vals_chi_vals>pval_chi2_min):
+        pval_chi2_min = np.max(p_Vals_chi_vals)*0.99
+    #print('Min2 : ', pval_chi2_min)
+    
     #### Produce RSS (residual sum squared) for each model vs the data
     RSS = dict()
     n_params = dict()
+    first_good_model = False
+    # Setting a dummy condition if all p values are zero
+    # Since this does not allow to evaluate the RSS for any model!
+    if np.all(p_Vals_chi_vals==0):
+        first_good_model=True
     for deg, model in models.items():
+        print(f'deg {deg} : ', p_Vals_chi[deg])
+        if not first_good_model and p_Vals_chi[deg] <= pval_chi2_min: 
+            continue
+        first_good_model=True
         n_params[deg] = len(model.get_params())
         model_histogram = plot_tools.bin_model(model, bins=data_h[1], 
                                                  verbose=False, 
                                                  integrate=False)*np.sum(data_h[0])
         RSS[deg] = np.sum((data_h[0]-model_histogram)**2)    
 
-
+    print(RSS)
 
 
 
@@ -737,9 +763,15 @@ def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', wei
                 break
     
     #In this case, no comparison met the 0.05 threshold, so we take the one with the lowest pval. If the lowest p val is greater than 0.1 we take the initial model
+    print(best_degrees, p_vals_tmp)
+    if len(p_vals_tmp)==0:
+        p_vals_tmp.append(0.5)
     if len(best_degrees)==1 and np.min(p_vals_tmp)<0.1 :
         index_best_deg = np.argmin(p_vals_tmp)
         best_deg = int(comparison[index_best_deg].split('vs')[1].strip())
+    elif len(best_degrees)==0:
+        import pdb
+        pdb.set_trace()
     else:
         index_best_deg = best_degrees_index[-1]
         best_deg = best_degrees[-1]
@@ -833,8 +865,12 @@ def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', wei
 
 
     fig, axes = plt.subplots(1,4, figsize=[45,10])
-    colors=['crimson', 'green', 'cyan', 'lime', 'magenta']
-    ls=['--', '-.', ':', '--', '-.']    
+    colors=['crimson', 'green', 'cyan', 'lime', 'magenta', 'orange', 
+            'dodgerblue', 'teal', 'sienna', 'deeppink', 'gold',
+            'orangered', 'peru', 'slateblue', 'royalblue', 'darkviolet' ]
+    ls=['--', '-.', ':', '--', '-.', ':', 
+        (0, (1,1)), (0, (5,1)), (0, (3, 1, 1, 1)), (0, (3, 5, 1, 5, 1, 5)),
+        (0, (1,1)), (0, (5,1)), (0, (3, 1, 1, 1)), (0, (3, 5, 1, 5, 1, 5))]    
     
     if len(textos)<30:
         axes[-1].text(1.03, 0.98, '\n'.join(textos),
@@ -910,6 +946,7 @@ def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', wei
                                       weights=weights, 
                                       bins=nbins, 
                                       main_kwargs=main_ks, 
+                                      pdf_name=models[keys_ax[0]].name+f'  ({str(round(p_Vals_chi[keys_ax[0]],3))})',
                                       return_chi2=True)
         for indx, key_model in enumerate(keys_ax[1:]):
 
@@ -917,7 +954,9 @@ def evaluate_best_Ftest(data, models, minimums, nbins=20, strategy='close1', wei
             if best_deg_==models_per_ax*indx_ax+indx+1:
                 main_ks = dict(color='blue', 
                                linewidth=4)
-            plot_tools.model(models[key_model], scaling=_plot_ini[0], axis=ax, **main_ks)
+            plot_tools.model(models[key_model], scaling=_plot_ini[0], axis=ax, 
+                             label=models[key_model].name+f'  ({str(round(p_Vals_chi[key_model],3))})',
+                             **main_ks)
         ax.legend(frameon=True, ncol=2, fontsize=13)
     axes[1].set_title(f'$q^2$ Bin {Bin} - {names_types[type_.lower()]}')
     legend_1 = axes[-1].legend(frameon=True, #loc='upper right',
