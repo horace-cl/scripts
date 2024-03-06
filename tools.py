@@ -91,16 +91,20 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
      e.g. if params are named as c_x^y_BIN7, the unncesesary string _BIN7 could be removed
     """
     out_dict = dict()
-
     for param in pdf.get_params():
         fitted = False
         #Remove any unwanted string from parameter name for good matching
         param_name_clean = param.name.replace(substring_pdf, '')
         for param_min, result in minimum.params.items():
             key = 'minuit_hesse' if 'minuit_hesse' in result else 'hesse_np'
+            if 'hesse' in result:
+                key = 'hesse'
             if (param_name_clean in param_min.name) or (param.name in param_min.name):
+                err = result.get(key, {'error':-1})['error']
+                if complex == type(err):
+                    err = -2
                 out_dict[param_name_clean] = dict(value=result['value'], 
-                                                  hesse=result.get(key, {'error':-1})['error'])
+                                                  hesse=err)
                 fitted = True
         if not fitted: out_dict[param_name_clean] = dict(value=param.value().numpy())
 
@@ -126,12 +130,16 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
 
 
 
-def create_json_composed(minimum, pdf, output_dir, name, substring_minimum='', substring_pdf=''):
-    return crate_json_composed(minimum, pdf, output_dir, name, substring_minimum, substring_pdf)
+def create_json_composed(minimum, pdf, output_dir, name, substring_minimum='', substring_pdf='', type_='', **kwargs):
+    return crate_json_composed(minimum, pdf, output_dir, name, substring_minimum, substring_pdf, type_, **kwargs)
 
-def crate_json_composed(minimum, pdf, output_dir, name='', substring_minimum='', substring_pdf=''):
+def crate_json_composed(minimum, pdf, output_dir, name='', substring_minimum='', substring_pdf='', type_='', **kwargs):
     out_dict = create_params_dict_composed(minimum, pdf, substring_minimum, substring_pdf)
-    
+    if type_:
+        out_dict['type']=type_
+    if kwargs:
+        for key, val in kwargs.items():
+            out_dict[key]=val
     if not name: name='Params.json'
     if not name.endswith('.json'): name+='.json'
     with open(os.path.join(output_dir, name), 'w+') as jj:
