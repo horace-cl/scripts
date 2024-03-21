@@ -120,8 +120,60 @@ class decayWidth(zfit.pdf.BasePDF):
         #Extract the normalization
         norm = self.integrate([[limits[0]], [limits[1]]]).numpy()[0]
         return cdfs/norm
-        
+
+
+# Model Necessary PDFs
+class Angular_PDF_B0_ks(zfit.pdf.BasePDF):
+    """ Angular pdf with one parameter from equation (7.2).
+
+    """
+
+    def __init__(self, obs, FH, name="Angular_pdf", ):
     
+        params = {'FH': FH}
+        super().__init__(obs, params, name=name)
+
+    def _pdf(self, x, norm_range):
+    
+        cos_l = z.unstack_x(x)
+        FH = self.params['FH']
+
+        pdf = 3/2*(1 - FH)*(1 - tf.math.square(tf.math.abs(cos_l))) + FH
+    
+        return pdf
+
+
+
+class decayWidth_norm(zfit.pdf.BasePDF):  
+    """
+    Decay width of the decay:
+    bu -> su mu mu
+    https://arxiv.org/pdf/0709.4174.pdf
+    https://arxiv.org/pdf/hep-ex/0604007.pdf
+    """
+    def __init__(self, AFB, FH, obs, name="angular_dist" ):
+        # se debe definir los parametros a pasar a la pdf
+        params = {
+              'AFB': AFB,
+              'FH': FH, }
+        super().__init__(obs, params, name=name)
+
+
+    def _pdf(self, x, norm_range):
+        cos_l = z.unstack_x(x)
+
+        AFB, FH = self.params['AFB'], self.params['FH']
+
+        # aqui definimos la pdf
+        cos2_l = cos_l*cos_l
+
+        pdf = 3/4*(1-FH)*(1-cos2_l)
+        pdf += 1/2*FH
+        pdf += AFB*cos_l
+
+        return pdf
+
+
     
 class non_negative_chebyshev(zfit.pdf.BasePDF):
     """
@@ -1013,3 +1065,90 @@ def read_efficiency(obs, params, name='', fixed_params=True, previous_name=''):
                                         bandwidth=params_['bandwidth'],
                                         padding=params_['padding'],
                                         name=name)
+
+
+
+
+# class decayWidth_B0_Kstar(zfit.pdf.BasePDF):
+#     '''
+#     Decay B^0 -> K^{*0} \mu^+ \mu^-
+#     Funciona directamente con el parámetro de phi
+# 	Written by Carlos Anguiano
+#     '''
+#     _PARAMS = ['FL', 'AFB', 'S39']
+
+#     def __init__(self, FL, AFB, S39, obs, name="angular_dist" ):
+#         # se debe definir los parametros a pasar a la pdf
+#         params = {
+#               'FL': FL,
+#               'AFB': AFB,
+#               'S39': S39}
+#         super().__init__(obs, params, name=name )#FL=FL, AFB=AFB, S3=S3, S9=S9) # params
+
+
+#     def _unnormalized_pdf(self, x):
+#         #print(x)
+#         #print(type(x))
+#         cosThetaK, cosThetaL, phi = z.unstack_x(x)
+
+#         #cos2phi = tf.math.cos(2*phi)
+
+#         FL = self.params['FL']
+#         AFB = self.params['AFB']
+#         S3 = self.params['S39']
+
+#         cosK2 = cosThetaK*cosThetaK
+#         cosL2 = cosThetaL*cosThetaL
+
+#         pdf = (3/4)*(1-FL)*(1-cosK2)
+#         pdf += FL*cosK2
+#         pdf += (1/4)*(1-FL)*(1-cosK2)*(2*cosL2-1)
+#         pdf += - FL*cosK2*(2*cosL2-1)
+#         pdf += S39*(1-cosK2)*(1-cosL2)*tf.math.cos(2*phi) 
+#         pdf += (4/3)*AFB*(1-cosK2)*cosThetaL
+#         #pdf += (4/3)*AFB*(1-cosK2)*cosL2 Este coseno de theta_L no debe llevar ^2
+#         pdf = pdf*9/(16*pi)
+
+#         return pdf
+
+# def total_integral_B0_Kstar(cosThetaK, cosThetaL, phi, AFB, FL, S39):
+
+#     integral = cosThetaL**3*(-0.0298415518297304*FL*cosThetaK**3*phi 
+#                        - 0.0298415518297304*FL*cosThetaK*phi 
+#                        + 0.00994718394324346*S39*cosThetaK**3*tf.math.sin(2*phi) 
+#                        - 0.0298415518297304*S39*cosThetaK*tf.math.sin(2*phi) 
+#                        - 0.00994718394324346*cosThetaK**3*phi 
+#                        + 0.0298415518297304*cosThetaK*phi) 
+#     + cosThetaL**2*phi*(-0.0397887357729738*AFB*cosThetaK**3 
+#                   + 0.119366207318922*AFB*cosThetaK) 
+#     + cosThetaL*(0.149207759148652*FL*cosThetaK**3*phi 
+#            - 0.0895246554891911*FL*cosThetaK*phi 
+#            - 0.0298415518297304*S39*cosThetaK**3*tf.math.sin(2*phi) 
+#            + 0.0895246554891911*S39*cosThetaK*tf.math.sin(2*phi) 
+#            - 0.0298415518297304*cosThetaK**3*phi 
+#            + 0.0895246554891911*cosThetaK*phi)
+    
+#     return integral
+
+
+
+# def analytic_integral_B0_Kstar(x, limits, norm_range, params, model):
+#     fl = params['FL']
+#     afb = params['AFB']
+#     s39 = params['S39']
+
+#     lower, upper = limits.limits
+#     lower = lower[0]
+#     upper = upper[0]
+
+#     integral = total_integral_B0_Kstar(upper[0], upper[1], upper[2], afb, fl, s39) - total_integral(lower[0], lower[1], lower[2], afb, fl, s39)
+#     print("Integral called")
+#     return integral
+    
+# limits_param = ([zfit.Space.ANY, zfit.Space.ANY, zfit.Space.ANY], [zfit.Space.ANY, zfit.Space.ANY, zfit.Space.ANY])
+# integral_limits = zfit.Space(axes=(0,1,2), limits = limits_param)
+
+# decayWidth.register_analytic_integral(
+#     analytic_integral, integral_limits, #supports_multiple_limits=True
+# )
+

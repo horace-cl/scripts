@@ -57,6 +57,28 @@ def create_single_constraint(model, parameter):
 
 
 
+def create_constraint_B0Ks(model, fh_index=False):
+    #First look for the indices of the POIs
+    if (type(fh_index)!=int and fh_index==False):
+
+        for i,p in enumerate(model.get_params()):
+            if 'fh' in p.name.lower() or 'f_h' in p.name.lower():  fh_index = i
+
+        if str(fh_index)=='False':
+            print('I was not able to find the indices, please fix it here:\n ../scripts/SLSQP_zfit.py')
+            raise NotImplementedError
+    #Now define the "simple" constraints give the found index
+    constAngParams = (
+                 {'type': 'ineq', 'fun': lambda x:  x[fh_index]},
+                 {'type': 'ineq', 'fun': lambda x:  1-x[fh_index]},
+                )
+    print(fh_index)
+
+    return constAngParams
+
+
+
+
 class SLSQP(BaseMinimizer):
     
     def __init__(self, tolerance=None, verbosity=5, name='SLSQP', 
