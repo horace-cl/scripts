@@ -293,16 +293,19 @@ def create_errf_back(obs, name=''):
                              name='errf_mass_back')  
     return errff
 
-def create_gauss_exp_back(obs, name=''):
-    mu     = zfit.Parameter(r'$\mu_B$'+f'{name}', 4.9, 3.5, 5.03)
-    sigma  = zfit.Parameter(r'$\sigma_B$'+f'{name}', 0.2, 0.02, 1)
-    gauss  = zfit.pdf.Gauss(mu = mu, sigma=sigma, obs = obs, name='Gaussian')        
-    lambda_     = zfit.Parameter(r'$\lambda_B$'+f'{name}', -2)
-    exponential = zfit.pdf.Exponential(lambda_=lambda_, obs = obs, name='Exponential')
+def create_gauss_exp_back(obs, name='',
+                         mu_opts = [4.9, 3.5, 5.03],
+                         sigma_opts=[0.2, 0.02, 1],
+                         lambda_opts=[-2]):
+    mu     = zfit.Parameter(r'$\mu_B$'+f'{name}', *mu_opts)
+    sigma  = zfit.Parameter(r'$\sigma_B$'+f'{name}',*sigma_opts)
+    gauss  = zfit.pdf.Gauss(mu = mu, sigma=sigma, obs = obs, name='Gaussian'+name)        
+    lambda_     = zfit.Parameter(r'$\lambda_B$'+f'{name}', *lambda_opts)
+    exponential = zfit.pdf.Exponential(lambda_=lambda_, obs = obs, name='Exponential'+name)
     frac = zfit.Parameter(r'frac_mass'+f'{name}', 0.1, 0, 1.0, 0.001)
     
     model = zfit.pdf.SumPDF([gauss, exponential], fracs=frac,
-                        obs = obs, name = 'Gauss+Exp')
+                        obs = obs, name = 'Gauss+Exp'+name)
     return model
 
 def create_errf_exp_back(obs, name='', 
