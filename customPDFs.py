@@ -205,7 +205,42 @@ class non_negative_chebyshev(zfit.pdf.BasePDF):
     
     
     
-class bernstein(zfit.pdf.BasePDF):  
+class bernstein_01(zfit.pdf.BasePDF):  
+    """
+    Bernstein_nth Degree
+    From a to b
+    x-> (x-a/b-a)
+    https://en.wikipedia.org/wiki/Bernstein_polynomial
+    """
+    def __init__(self, coeffs, obs, name="Bernstein" ):        
+        self.degree = len(coeffs)-1
+        params = dict()
+        for indx,c in enumerate(coeffs):
+            params[f'c{indx}'] = c
+
+        super().__init__(obs, params, name=name+f' Deg. {self.degree}')
+
+
+    def _unnormalized_pdf(self, x):
+        x_ = z.unstack_x(x)
+        limits = self.norm_range.limit1d
+        x_T  = x_
+        deg = self.degree
+
+        basis = dict()
+        for i in range(deg+1):
+            basis[i] = self.params[f'c{i}']*binom(deg,i)*tf.pow(x_T,i)*tf.pow(1-x_T,deg-i)
+
+        pdf = basis[0]
+        for i in range(1, deg+1):
+            pdf += basis[i]
+
+        return pdf
+        
+        
+        
+        
+    class bernstein(zfit.pdf.BasePDF):  
     """
     Bernstein_nth Degree
     From a to b
@@ -1049,7 +1084,8 @@ def read_complete_model_2components_V9(mass,
 def read_efficiency(obs, params, name='', fixed_params=True, previous_name=''):
     
     if type(params)==str:
-        params_ = tools.read_json(tools.analysis_path(params))
+        #params_ = tools.read_json(tools.analysis_path(params))
+        params_ = tools.read_json(params)
     else:
         params_ = params
 
