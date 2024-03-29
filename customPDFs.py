@@ -237,10 +237,9 @@ class bernstein_01(zfit.pdf.BasePDF):
 
         return pdf
         
+            
         
-        
-        
-    class bernstein(zfit.pdf.BasePDF):  
+class bernstein(zfit.pdf.BasePDF):  
     """
     Bernstein_nth Degree
     From a to b
@@ -333,6 +332,7 @@ class bernstein_01(zfit.pdf.BasePDF):
         # so we need to cast it to a numpy array 
         cdf_normalized = cdf/normalization
         return cdf_normalized.numpy()
+
 
 def get_degree(coefs_names, type_=''):
     search_degree = [re.search(r'_[0-9]+', coef) for coef in coefs_names]
