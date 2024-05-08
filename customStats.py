@@ -4,6 +4,30 @@ from scipy import stats
 import numpy as np
 import pandas as pd
 
+
+
+
+def covariance_to_correlation(cov_matrix):
+    # Calculate the standard deviations for each variable
+    std_deviations = np.sqrt(np.diag(cov_matrix))
+    
+    # Calculate the correlation matrix
+    correlation_matrix = cov_matrix / np.outer(std_deviations, std_deviations)
+    
+    return correlation_matrix
+
+
+def correlation_to_covariance(correlation_matrix, std_deviations):
+    # Calculate the covariance matrix
+    cov_matrix = correlation_matrix * np.outer(std_deviations, std_deviations)
+    
+    return cov_matrix
+
+def scale_covariance(cov_matrix, sigma=1):
+    corr  = covariance_to_correlation(cov_matrix)
+    stds  = np.sqrt(np.diag(cov_matrix))
+    return correlation_to_covariance(corr, stds*sigma)
+
 def clopper_pearson(x, n, alpha=0.32, return_errors=True):
     """Estimate the confidence interval for a sampled Bernoulli random
     variable.
@@ -30,11 +54,11 @@ def clopper_pearson(x, n, alpha=0.32, return_errors=True):
             hi = np.where((ratio==0) & (hi>0.5), 0, hi )
         to_return = np.array([lo, hi])
     else:
+        to_return = [0.0 if math.isnan(lo) else lo, 
+                    1.0 if math.isnan(hi) else hi]
         if return_errors:
-            lo = ratio - lo
-            hi = hi -ratio
-        to_return = (0.0 if math.isnan(lo) else lo, 
-                    1.0 if math.isnan(hi) else hi)
+            to_return[0] = ratio - to_return[0]
+            to_return[1] = to_return[1] -ratio
     return to_return
 
 
