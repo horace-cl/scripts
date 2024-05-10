@@ -1188,7 +1188,13 @@ def plot_model(data,
     else:
         axis.set_ylim(0, np.max(h[0])*1.3)
     axis.set_xlim(limits)
-    axis.set_ylabel('Events / '+str(round(bin_size, kwargs.get('round_binsz', 4))))
+    x_axis_size = limits[1]-limits[0]
+    round_binsz = 3
+    if x_axis_size<1:
+        round_binsz = 4
+    if x_axis_size>10:
+        round_binsz = 2
+    axis.set_ylabel('Events / '+str(round(bin_size, kwargs.get('round_binsz', round_binsz))))
     axis.legend(fontsize=kwargs.get('fontsize', 18), 
                 loc=kwargs.get('loc', 1), 
                 frameon=kwargs.get('frameon', True), 
@@ -1405,7 +1411,21 @@ def plot_measurement_q2(mean, error, bins, q2_width, q2_mean, axis, poi='afb', y
     
     
     
-
+def plot_box(x,y,xerr,yerr, ax=None, **kwargs):
+    if ax:
+        ax.fill([x-xerr,x+xerr,x+xerr,x-xerr],
+             [y-yerr, y-yerr,y+yerr, y+yerr],**kwargs)
+    else:
+        plt.fill([x-xerr,x+xerr,x+xerr,x-xerr],
+             [y-yerr, y-yerr,y+yerr, y+yerr],**kwargs)
+        
+def plot_all_box(xs, ys, xerrs, yerrs, ax=None, **kwargs):
+    label = kwargs.pop('label', None)
+    for indx, (x,y,xerr,yerr) in enumerate(zip(xs,ys, xerrs, yerrs)):
+        if indx==0:
+            plot_box(x,y,xerr,yerr, ax=None, label=label, **kwargs)
+        else:
+            plot_box(x,y,xerr,yerr, ax=None, **kwargs)
     
     
     
