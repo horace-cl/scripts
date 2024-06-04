@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
 import mplhep as hep
 import seaborn as sns
 from matplotlib import colors as pltcolors
@@ -424,7 +425,10 @@ def create_axes_for_pulls(fig, split = 70, space_between = 2):
     axp = plt.subplot2grid(shape = (100,1), loc = (split+space_between,0),
                            rowspan = 100-(split+space_between), fig = fig)
     
-    axp.get_shared_x_axes().join(axp, ax)
+    if int(matplotlib.__version__.split('.')[1])>7:
+        axp.get_shared_x_axes().joined(axp, ax)
+    else:
+        axp.get_shared_x_axes().join(axp, ax)
     
     ax.set_xticklabels([])
     return ax, axp
@@ -544,6 +548,13 @@ def textParams2(minimum, ncol=2, clean=True):
 
 
 def textParams(minimum, ncol=2, clean=True, params='All'):
+    dict_struct = next(iter(minimum.params.values()))
+    
+    hesse_str = ''
+    if 'minuit_hesse' in dict_struct: hesse_str = 'minuit_hesse'
+    elif 'hesse_np' in dict_struct:   hesse_str = 'hesse_np'
+    elif 'hesse' in dict_struct:      hesse_str = 'hesse'
+
     texts = ['' for c in range(ncol)]
     if type(params)==str and params=='All':
         n_params = len(minimum.params)
@@ -554,15 +565,31 @@ def textParams(minimum, ncol=2, clean=True, params='All'):
 
     indx_p=0
     for param in params_to_print:
-        result_ = minimum.params[param]
+        
+        if param not in minimum.params:
+            result_ = dict(value = param.value().numpy())
+            if 'ComposedParameter' in str(type(param)):
+                p0 = param.params['param_0']
+                p1 = param.params['param_1']
+                ERR = minimum.params[p0][hesse_str]['error']
+                result_[hesse_str] = dict(error = ERR*p1.value().numpy())
+
+
+        else:
+            result_ = minimum.params[param]
+    
         col = indx_p%ncol
         text=''
-        param_value = minimum.params[param]['value']
+        param_value = result_['value']
         
-        if 'minuit_hesse' in result_: err = result_['minuit_hesse']['error']
-        elif 'hesse_np' in result_: err = result_['hesse_np']['error']
-        elif 'hesse' in result_: err = result_['hesse']['error']
+        #if 'minuit_hesse' in result_: err = result_['minuit_hesse']['error']
+        #elif 'hesse_np' in result_: err = result_['hesse_np']['error']
+        #elif 'hesse' in result_: err = result_['hesse']['error']
+        #else: err = -1
+        
+        if hesse_str in result_: err = result_[hesse_str]['error']
         else: err = -1
+
         r=1
         if (err*err).real<0: 
             err = (err*err).real
@@ -974,7 +1001,8 @@ def plot_model(data,
                filled=True,
                stacked=False,
                ignore_model_binning=False,
-               print_pvalue=True,
+               print_pvalue=True,               
+               edgecolors = ['red', 'blue', 'green', 'orange', 'magenta', 'violet', 'cyan', 'lime'],
                **kwargs):
     """ Tries to be an all-in-one 1D-plotting for (~kind of) HEP style.
         Can create pulls given a binning, and also evaluate chi2/DOF
@@ -1094,8 +1122,7 @@ def plot_model(data,
         except NotImplementedError as e:
             print(e)
             pdfs_list = []
-        hatces     = ['', '', '--', '\\', '///', '', '', '']
-        edgecolors = ['red', 'blue', 'green', 'orange', 'magenta', 'violet', 'cyan', 'lime']
+        hatces     = ['', '', '--', '\\', '///', '', '', '']        
         #facecolors = ['lightcoral', 'lightblue', 'palegreen', 'purple']
         #edgecolors = ['orangered' , 'dodgerblue', 'darkgreen', 'darkviolet']
         zorders    = [50,20,5, 1] 
