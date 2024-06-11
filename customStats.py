@@ -16,17 +16,80 @@ def covariance_to_correlation(cov_matrix):
     
     return correlation_matrix
 
-
 def correlation_to_covariance(correlation_matrix, std_deviations):
     # Calculate the covariance matrix
     cov_matrix = correlation_matrix * np.outer(std_deviations, std_deviations)
     
     return cov_matrix
 
+
+def extract_submatrix(matrix, selected_columns):
+    """
+    Extracts a submatrix from a squared NumPy matrix based on the specified columns.
+
+    Parameters:
+    matrix (numpy.ndarray): The input square matrix.
+    selected_columns (list): A list of column indices to select from the matrix.
+
+    Returns:
+    numpy.ndarray: The submatrix containing the specified columns and corresponding rows.
+    """
+    if not isinstance(matrix, np.ndarray) or len(matrix.shape) != 2:
+        raise ValueError("Input 'matrix' must be a 2-dimensional NumPy array.")
+
+    if not isinstance(selected_columns, list):
+        raise ValueError("'selected_columns' must be a list of column indices.")
+
+    num_rows, num_cols = matrix.shape
+
+    for col_idx in selected_columns:
+        if col_idx < 0 or col_idx >= num_cols:
+            raise ValueError(f"Column index {col_idx} is out of range.")
+
+    submatrix = matrix[:, selected_columns]
+    submatrix = submatrix[selected_columns, :]
+
+    return submatrix
+
+
+
+
+
 def scale_covariance(cov_matrix, sigma=1):
     corr  = covariance_to_correlation(cov_matrix)
     stds  = np.sqrt(np.diag(cov_matrix))
     return correlation_to_covariance(corr, stds*sigma)
+
+
+
+def poisson_interval(k, alpha=0.32, return_errors=True):
+    """
+    Estimate the confidence interval for the mean of a Poisson distribution
+    expressed using chi2 distributions.
+    https://en.wikipedia.org/wiki/Poisson_distribution#Confidence_interval
+    """
+    chi2 = stats.chi2
+    a = alpha
+    k = np.array(k)
+
+    lo, hi = (chi2.ppf(a/2, 2*k) / 2, chi2.ppf(1-a/2, 2*k + 2) / 2)
+    lo = np.where(k==0, 0, lo)
+
+    if isinstance(k, np.ndarray):
+        lo = np.nan_to_num(lo, nan=0)
+        if return_errors:
+            lo = k - lo
+            hi = hi -k            
+        to_return = np.array([lo, hi])
+    else:
+        to_return = [0.0 if math.isnan(lo) else lo, 
+                    1.0 if math.isnan(hi) else hi]
+        if return_errors:
+            to_return[0] = k - to_return[0]
+            to_return[1] = to_return[1] -k
+    return to_return
+
+
 
 def clopper_pearson(x, n, alpha=0.32, return_errors=True):
     """Estimate the confidence interval for a sampled Bernoulli random
@@ -116,7 +179,7 @@ def mask_inBin(data, bin_edges, index):
     
 
     
-def histogram_weighted(data, bins, weights=None,density=False,**kwargs):
+def histogram_weighted(data, bins, weights=None,density=False,symetric_errs=True,**kwargs):
     
     supported_types = [np.ndarray, pd.Series]    
     if not type(weights) in supported_types:
@@ -141,4 +204,7 @@ def histogram_weighted(data, bins, weights=None,density=False,**kwargs):
         counts_weighted /= (sum_w*bin_size)
         errors_weighted /= (sum_w*bin_size)
     
+    if np.all(weights==1) and not symetric_errs:
+        errors_weighted = poisson_interval(counts)
+
     return (counts_weighted, bin_edges, errors_weighted)

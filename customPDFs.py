@@ -809,6 +809,30 @@ def read_background_model(obs, params, model_name, name='', fixed_params=True, s
 
 
 
+def read_signal_plus_background_mmpi(obs, params, name='', fixed_params=True, return_components=True, suffix_yield='', suffix_signal='auto', suffix_bkg='', suffix_mmpi=''):
+    if type(params)==str:
+        with open(params, 'r') as jj: params = json.load(jj)
+    Ys = params[f'Ys{suffix_yield}']['value']
+    Yb = params[f'Yb{suffix_yield}']['value']
+    Ypi = params[f'Ypi{suffix_yield}']['value']
+    if not fixed_params:
+        Ys = zfit.Parameter('Ys'+name, Ys, step_size=0.1)
+        Yb = zfit.Parameter('Yb'+name, Yb, step_size=0.1)
+    signal_model_name = params.get('signal_model', 'DCB')
+    background_model_name = params.get('background_model', 'ErrfExp')
+    
+    signal_model     = read_signal_model(    obs, params, signal_model_name, name, fixed_params, suffix = suffix_signal) 
+    background_model = read_background_model(obs, params, background_model_name, name, fixed_params, suffix = suffix_bkg)
+    mmpi_model       = read_signal_model(obs, params, 'DCB', name, True, suffix = suffix_mmpi)
+
+    signal_extended     = signal_model.create_extended(Ys)
+    background_extended = background_model.create_extended(Yb)
+    
+    if return_components:
+        return signal_model, background_model, mmpi_model, zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
+    return zfit.pdf.SumPDF([signal_extended, background_extended, mmpi_model], name='MassModel'+name)
+
+
 def read_signal_plus_background(obs, params, name='', fixed_params=True, return_components=True, suffix_yield='', suffix_signal='auto', suffix_bkg=''):
     if type(params)==str:
         with open(params, 'r') as jj: params = json.load(jj)
@@ -830,7 +854,7 @@ def read_signal_plus_background(obs, params, name='', fixed_params=True, return_
         return signal_model, background_model, zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
     return zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
 
-def read_dcb_errf_exp(obs, params, name='', fixed_params=True, return_components=True, suffix_yield='', suffix_dcb='auto', suffix_bkg=''):
+def read_dcb_errf_exp(obs, params, name='', fixed_params=True, return_components=True, suffix_yield='', suffix_dcb='auto', suffix_bkg='', ):
     if type(params)==str:
         with open(params, 'r') as jj: params = json.load(jj)
     Ys = params[f'Ys{suffix_yield}']['value']
@@ -1078,7 +1102,28 @@ def read_complete_model_2components_V9(mass,
     return CompleteModel, projections
 
 
+def read_complete_model_2components_V11(
+    mass, 
+    cos, 
+    params, 
+    name='', 
+    fixed_params=True,
+    afb_ini='none', 
+    fh_ini='none',
+    mass_red='none',
+    return_2d_Background=False,
+    return_angular_signal=False,
+    return_efficiency=False,
+    return_1D_models=False,
+    resonances=False
+    ):
 
+    if type(params)==str: params_dict = tools.read_json(params)
+    else: params_dict = params
+    
+    
+
+    pass
 
 
 def read_efficiency(obs, params, name='', fixed_params=True, previous_name=''):

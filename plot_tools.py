@@ -768,9 +768,18 @@ def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_e
     
     binned_model = bin_model(pdf, h[1], integrate=integrate)
     expected_events = binned_model * scale_events
-    #pull = (h[0]-expected_events)/np.sqrt(expected_events)
-    pull = (h[0]-expected_events)/y_err
-    axis.errorbar(bin_mean, pull, yerr=1, ls='none', capsize=1, color='black')
+    
+    # Asymetric errors handled as root if number of events is higher than expected, use low error
+    # The code we use, store the low error with the 0 index.
+    # https://root.cern.ch/doc/master/RooCurve_8cxx_source.html#l00567 -> chi2
+    # https://root.cern.ch/doc/master/RooHist_8cxx_source.html#l00727  -> pull
+    if len(y_err)==2:
+        y_err_ = np.where(h[0]>expected_events, y_err[0,:], y_err[1,:])
+    else:
+        y_err_ = y_err
+
+    pull = (h[0]-expected_events)/y_err_
+    axis.errorbar(bin_mean, pull, yerr=y_err/y_err_, ls='none', capsize=1, color='black')
     axis.scatter(bin_mean, pull, color='black', s=40)
     axis.plot(limits, [3,3], ls='--', color='grey')
     axis.plot(limits, [-3,-3], ls='--', color='grey')
@@ -787,7 +796,7 @@ def plot_pull(h, pdf, xlabel, axis, return_chi2=False, integrate=False, return_e
     axis.set_xlabel(xlabel)
     
     mask_ = h[0]>0
-    denominator = np.power(y_err[mask_],2)
+    denominator = np.power(y_err_[mask_],2)
     #denominator = expected_events[mask_]
     if return_chi2:
         if return_expected_evts:    
@@ -1003,6 +1012,10 @@ def plot_model(data,
                ignore_model_binning=False,
                print_pvalue=True,               
                edgecolors = ['red', 'blue', 'green', 'orange', 'magenta', 'violet', 'cyan', 'lime'],
+               zorders    = [  500,    200,     100,       50,        20,        5,     1],
+               alphas     = [  0.4,  0.4, 0.4, 0.4, 0.4, 0.4],
+               levels     = [1,1,1,1,1,1,1],
+               symetric_errs=True,
                **kwargs):
     """ Tries to be an all-in-one 1D-plotting for (~kind of) HEP style.
         Can create pulls given a binning, and also evaluate chi2/DOF
@@ -1053,12 +1066,12 @@ def plot_model(data,
         print('Ignoring Bins since you passed a binned model!')
         edges_ = model.space.binning[0].edges
         #h = np.histogram(data, bins=edges_, weights=weights)
-        h = customStats.histogram_weighted(data, bins=edges_, weights=weights)
+        h = customStats.histogram_weighted(data, bins=edges_, weights=weights, symetric_errs=symetric_errs)
     else:
         if 'BinnedFromUnbinnedPDF' in str(type(model)):
             print('Ignoring binning from binned model!')
         #h = np.histogram(data, bins=bins, range=limits, weights=weights)
-        h = customStats.histogram_weighted(data, bins=bins, range=limits, weights=weights)
+        h = customStats.histogram_weighted(data, bins=bins, range=limits, weights=weights, symetric_errs=symetric_errs)
 
     bin_mean = (h[1][1:]+h[1][:-1])/2
     bin_size = h[1][1]-h[1][0]
@@ -1070,12 +1083,23 @@ def plot_model(data,
         scale = np.sum(np.diff(h[1])*h[0])
     print(scale)
     y_err = h[-1]#np.sqrt(h[0]*(1-h[0]/n_events))
-    mask_ = h[0]>0
+    if symetric_errs:
+        mask_ = h[0]>0
     
-    axis.errorbar(bin_mean[mask_], 
+        axis.errorbar(bin_mean[mask_], 
                   h[0][mask_], 
                   xerr=bin_size/2, 
                   yerr=y_err[mask_], 
+                  label='Data', 
+                  ls='none', 
+                  **data_kwargs
+                 )
+
+    else:
+        axis.errorbar(bin_mean, 
+                  h[0], 
+                  xerr=bin_size/2, 
+                  yerr=y_err, 
                   label='Data', 
                   ls='none', 
                   **data_kwargs
@@ -1125,7 +1149,7 @@ def plot_model(data,
         hatces     = ['', '', '--', '\\', '///', '', '', '']        
         #facecolors = ['lightcoral', 'lightblue', 'palegreen', 'purple']
         #edgecolors = ['orangered' , 'dodgerblue', 'darkgreen', 'darkviolet']
-        zorders    = [50,20,5, 1] 
+        #zorders    = [50,20,5, 1] 
         previous_vals = np.zeros_like(x)
         for i in range(len(pdfs_list)):
             model = pdf.pdfs[i]
@@ -1134,7 +1158,7 @@ def plot_model(data,
             if 'decay' in model.name.lower(): name = 'Angular Signal'
             else : name=model.name.replace('_extended', '')
             facecolor = list(pltcolors.to_rgba(edgecolors[i]))
-            facecolor[-1] = 0.4
+            facecolor[-1] = alphas[i]
             if filled:
                 if stacked:
                     axis.fill_between(x, previous_vals+model.pdf(x)*scale*frac, previous_vals, # alpha=0.6,
@@ -1157,7 +1181,7 @@ def plot_model(data,
                     label=name,
                     zorder = zorders[i])
             #level=2
-            if model_has_pdfs(model) and level==2 and regex in model.name.lower():
+            if model_has_pdfs(model) and levels[i]==2 and regex in model.name.lower():
                 ls = ['--', ':', '-.', '--', ':', '.-']
                 linewidths = [1.5, 1.5, 1.5, 3, 3, 3,]
                 linewidths = [2.5, 3.5, 3.5, 5, 7, 7,]
@@ -1238,7 +1262,8 @@ def plot_model(data,
     #print('formationg')
     #axis.ticklabel_format(axis="x", style="scientific", scilimits=(0,0))
     
-    
+    # Asymetric errors
+    # https://root.cern.ch/doc/master/RooCurve_8cxx_source.html#l00567
     if pulls and not axis_pulls:
         raise NotFoundError('You need to pass another axis for the pulls ')
     elif pulls:
