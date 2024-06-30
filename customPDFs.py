@@ -818,6 +818,7 @@ def read_signal_plus_background_mmpi(obs, params, name='', fixed_params=True, re
     if not fixed_params:
         Ys = zfit.Parameter('Ys'+name, Ys, step_size=0.1)
         Yb = zfit.Parameter('Yb'+name, Yb, step_size=0.1)
+        Ypi = zfit.Parameter('Ypi_tmp_'+name, Ypi, step_size=0.1)
     signal_model_name = params.get('signal_model', 'DCB')
     background_model_name = params.get('background_model', 'ErrfExp')
     
@@ -827,10 +828,11 @@ def read_signal_plus_background_mmpi(obs, params, name='', fixed_params=True, re
 
     signal_extended     = signal_model.create_extended(Ys)
     background_extended = background_model.create_extended(Yb)
+    mmpi_model_extended = mmpi_model.create_extended(Ypi)
     
     if return_components:
-        return signal_model, background_model, mmpi_model, zfit.pdf.SumPDF([signal_extended, background_extended], name='MassModel'+name)
-    return zfit.pdf.SumPDF([signal_extended, background_extended, mmpi_model], name='MassModel'+name)
+        return signal_model, background_model, mmpi_model, zfit.pdf.SumPDF([signal_extended, background_extended, mmpi_model_extended], name='MassModel'+name)
+    return zfit.pdf.SumPDF([signal_extended, background_extended, mmpi_model_extended], name='MassModel'+name)
 
 
 def read_signal_plus_background(obs, params, name='', fixed_params=True, return_components=True, suffix_yield='', suffix_signal='auto', suffix_bkg=''):
@@ -1233,3 +1235,109 @@ def read_efficiency(obs, params, name='', fixed_params=True, previous_name=''):
 #     analytic_integral, integral_limits, #supports_multiple_limits=True
 # )
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class MyErf_PDF(zfit.pdf.BasePDF):
+    """ 
+    Erf pdf with two parameters
+    """
+
+    def __init__(self, obs, Mu, Sigma, c, name="PartialReco_pdf", ):
+    
+        #params = {'Mu': Mu, 'Sigma': Sigma}
+        params = {'Mu': Mu, 'Sigma': Sigma, 'c': c}
+        super().__init__(obs, params, name=name)
+
+    def _unnormalized_pdf(self, x):
+    
+        myx = z.unstack_x(x)
+        Mu = self.params['Mu']
+        Sigma = self.params['Sigma']
+        c = self.params['c']
+
+        #return 0.5 * (1.0 + tf.math.erf((myx - mu) / (sigma * tf.sqrt(2.0))))
+        #pdf = ( tf.math.erf((Mu -myx) / Sigma ) + 1.0 )
+        pdf = ( tf.math.erf((Mu -myx) / Sigma ) + c )
+
+        return pdf
+
+class MyArctanPDF(zfit.pdf.BasePDF):
+    """ 
+    Atan pdf with two parameters
+    """
+    def __init__(self, obs, Mu, Sigma, c, name="PartialReco_pdf"):
+
+        params = {'Mu': Mu, 'Sigma': Sigma, 'c': c}
+        super().__init__(obs, params, name=name)
+
+    def _unnormalized_pdf(self, x):
+
+        myx = z.unstack_x(x)
+        Mu = self.params['Mu']
+        Sigma = self.params['Sigma']
+        c = self.params['c']
+
+        pdf = ( tf.math.atan((Mu -myx) / Sigma ) + c )
+        
+        return pdf
+
+#class NonStandardStudentT_PDF_Gamma(zfit.pdf.BasePDF):
+class MyNSST_PDF(zfit.pdf.BasePDF):    
+    """ 
+    Non-standard Student's t-distribution PDF using Gamma function with three parameters: 
+    degrees of freedom (nu), scale (sigma), and location (mu).
+    """
+
+    def __init__(self, obs, nu, sigma, mu, mypi, name="NonStandardStudentT_pdf_Gamma"):
+    
+        params = {'nu': nu, 'sigma': sigma, 'mu': mu, 'mypi': mypi}
+        super().__init__(obs, params, name=name)
+
+    def _unnormalized_pdf(self, x):
+    
+        myx = z.unstack_x(x)
+        nu = self.params['nu']
+        sigma = self.params['sigma']
+        mu = self.params['mu']
+        mypi = self.params['mypi']
+
+        # Calcula la PDF de la distribución t de Student no estándar usando la función Gamma
+        #pdf = (scipy.special.gamma((nu + 1) / 2) / (tf.sqrt(tf.constant(tf.math.pi)) * tf.sqrt(nu) * sigma * scipy.special.gamma(nu / 2))) * (1 + ((myx - mu) ** 2) / (nu * sigma ** 2)) ** (- (nu + 1) / 2)
+
+        gamma_nu_half_plus_one = tf.exp(tf.math.lgamma((nu + 1) / 2))
+        gamma_nu_half = tf.exp(tf.math.lgamma(nu / 2))
+
+        #print( "aca un pi:  ", tnp.pi )
+        ##print( " aca otro pi:  ", tf.math.pi )
+        #pi_approx = 3.141592653589793  # Aproximación de pi
+        #pi_approx = tf.constant(3.141592653589793, dtype=tf.float32)  # Aproximación de π como float32
+
+        #pdf = (gamma_nu_half_plus_one / (tf.sqrt(tf.constant(pi_approx)) * tf.sqrt(nu) * sigma * gamma_nu_half)) * (1 + ((myx - mu) ** 2) / (nu * sigma ** 2)) ** (- (nu + 1) / 2)
+        #pdf = (gamma_nu_half_plus_one / (tf.sqrt(tf.constant(tnp.pi)) * tf.sqrt(nu) * sigma * gamma_nu_half)) * (1 + ((myx - mu) ** 2) / (nu * sigma ** 2)) ** (- (nu + 1) / 2)
+        pdf = (gamma_nu_half_plus_one / (tf.sqrt(mypi) * tf.sqrt(nu) * sigma * gamma_nu_half)) * (1 + ((myx - mu) ** 2) / (nu * sigma ** 2)) ** (- (nu + 1) / 2)
+
+        return pdf
