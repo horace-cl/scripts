@@ -546,6 +546,25 @@ def textParams2(minimum, ncol=2, clean=True):
         
     return texts
 
+def get_err_composedParam(parameter, minimum, n_randoms = 10000):
+    dependents = parameter.get_params()
+    covariance = minimum.covariance(dependents)
+    initial_values = [k.value().numpy() for k in dependents]
+    randoms_ = np.random.multivariate_normal(initial_values, 
+                                              covariance, 
+                                             size=n_randoms)
+    
+    values = list()
+    for rr in randoms_:
+        for index, param in enumerate(dependents): param.set_value(rr[index])
+        values.append(parameter.value().numpy())
+
+    for index, param in enumerate(dependents):
+        param.set_value(initial_values[index])    
+        
+    return np.std(values)
+
+
 
 def textParams(minimum, ncol=2, clean=True, params='All'):
     dict_struct = next(iter(minimum.params.values()))
@@ -569,10 +588,12 @@ def textParams(minimum, ncol=2, clean=True, params='All'):
         if param not in minimum.params:
             result_ = dict(value = param.value().numpy())
             if 'ComposedParameter' in str(type(param)):
-                p0 = param.params['param_0']
-                p1 = param.params['param_1']
-                ERR = minimum.params[p0][hesse_str]['error']
-                result_[hesse_str] = dict(error = ERR*p1.value().numpy())
+                # p0 = param.params['param_0']
+                # p1 = param.params['param_1']
+                # ERR = minimum.params[p0][hesse_str]['error']
+                # result_[hesse_str] = dict(error = ERR*p1.value().numpy())  
+                err_eval = get_err_composedParam(param, minimum, n_randoms = 10000)               
+                result_[hesse_str] = dict(error=err_eval)
 
 
         else:
@@ -1525,6 +1546,7 @@ def compare_plot(Data_Num,
                  ks_t  = False,
                  chi2_test= True, 
                  return_chi2_val=False,
+                 return_chi2_stat=False,
                  out_dir=None,
                  out_name='',
                  axes = [None, None],
@@ -1625,8 +1647,8 @@ def compare_plot(Data_Num,
     if label_Den or label_Num:
         if axes[0] and axes[0].get_legend():
             previous_title = axes[0].get_legend().get_title().get_text()
-            if previous_title: 
-                label_title = previous_title+'\n'+label_title
+            #if previous_title: 
+            #    label_title = previous_title+'\n'+label_title
             
         _main.legend(frameon=True, title=label_title, fontsize=16, title_fontsize=20)
     if ylim=='zero':
@@ -1697,6 +1719,8 @@ def compare_plot(Data_Num,
     if return_k_val:
         to_return.append(ks_[1])
     
+    if return_chi2_stat:
+        to_return.append((chi2_v, dof_v,))
     if return_chi2_val:
         to_return.append(chi2_p)
         

@@ -4,8 +4,7 @@ from scipy import stats
 import numpy as np
 import pandas as pd
 
-
-
+one_sigma = 0.682689
 
 def covariance_to_correlation(cov_matrix):
     # Calculate the standard deviations for each variable
@@ -62,7 +61,7 @@ def scale_covariance(cov_matrix, sigma=1):
 
 
 
-def poisson_interval(k, alpha=0.32, return_errors=True):
+def poisson_interval(k, alpha=1-one_sigma, return_errors=True):
     """
     Estimate the confidence interval for the mean of a Poisson distribution
     expressed using chi2 distributions.
@@ -73,7 +72,11 @@ def poisson_interval(k, alpha=0.32, return_errors=True):
     k = np.array(k)
 
     lo, hi = (chi2.ppf(a/2, 2*k) / 2, chi2.ppf(1-a/2, 2*k + 2) / 2)
-    lo = np.where(k==0, 0, lo)
+    lo = np.where(k==0, 
+                    0, lo)  # When k==0 we need to cover the full percentile by integrating one side only, so the lower error is 0
+    hi = np.where(k==0, 
+                    chi2.ppf(1-a, 2*k + 2) / 2,  # When k==0 we need to cover the full percentile by integrating one side only!
+                    hi) 
 
     if isinstance(k, np.ndarray):
         lo = np.nan_to_num(lo, nan=0)
@@ -91,7 +94,7 @@ def poisson_interval(k, alpha=0.32, return_errors=True):
 
 
 
-def clopper_pearson(x, n, alpha=0.32, return_errors=True):
+def clopper_pearson(x, n, alpha=1-one_sigma, return_errors=True):
     """Estimate the confidence interval for a sampled Bernoulli random
     variable.
     `x` is the number of successes and `n` is the number trials (x <=
