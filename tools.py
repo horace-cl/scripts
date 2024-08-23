@@ -4,11 +4,31 @@ import os
 import re
 from pprint import pprint
 import warnings
-
+import uproot3 as uproot
 
 
 path_to_latex = '/Users/horace/Documents/projects/CMS/LaTex/AN-21-020/Figures'
 hesse_names   = ['minuit_hesse', 'hesse_np']
+
+
+def find_tree_name(path):
+    file = uproot.open(path)
+    keys = file.keys()
+    if len(keys)>1:
+        text = 'Several trees, plase indicate the one you want to use!:\n'
+        for k in keys: text+=f' - {k}\n'
+        raise NotImplementedError(text)
+        #for key in keys: print('- ', key)
+    return keys[0]
+
+def root_to_df(path, tree='Auto', arrays=[]):
+    if tree=='Auto':
+        tree = find_tree_name(path)
+    if arrays:
+        return uproot.open(path)[tree].arrays(arrays, outputtype=pd.DataFrame) 
+    else:
+        return uproot.open(path)[tree].arrays(outputtype=pd.DataFrame) 
+
 
 
 def beep():
@@ -91,7 +111,16 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
      e.g. if params are named as c_x^y_BIN7, the unncesesary string _BIN7 could be removed
     """
     out_dict = dict()
-    for param in pdf.get_params():
+    pdf_params = [p for p in pdf.get_params()]
+    if pdf.is_extended: 
+        try:
+            yields = [_pdf.get_yield() for _pdf in pdf.pdfs if _pdf.is_extended]
+            pdf_params += yields
+            pdf_params = list(set(pdf_params))
+        except Exception as e:
+            print(e)
+
+    for param in pdf_params:
         fitted = False
         #Remove any unwanted string from parameter name for good matching
         param_name_clean = param.name.replace(substring_pdf, '')
@@ -105,6 +134,11 @@ def create_params_dict_composed(minimum, pdf, substring_minimum='', substring_pd
                     err = -2
                 out_dict[param_name_clean] = dict(value=result['value'], 
                                                   hesse=err)
+                if 'minuit_minos' in result:
+                    store_keys = 'lower upper lower_valid upper_valid'.split(' ')
+                    minos = {k: result['minuit_minos'].get(k, None) for k in store_keys}
+                    out_dict['minos'] = minos 
+
                 fitted = True
         if not fitted: out_dict[param_name_clean] = dict(value=param.value().numpy())
 
@@ -292,7 +326,7 @@ def init_params_c(model, family, c=0.1):
             continue
         elif family=='chebyshev' and 'c_0' in param.name:
             params.set_value(1)
-        else: 
+        elif family in model.name.lower() and 'c_' in param.name: 
             param.set_value(c)
         
         

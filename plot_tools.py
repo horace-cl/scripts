@@ -522,7 +522,10 @@ def textParams2(minimum, ncol=2, clean=True):
             if name[0]!='$': name = '$'+name
 
         if err<1:
-            r += int(np.round(-np.log10(np.abs(err))))
+            try: 
+                r += int(np.round(-np.log10(np.abs(err))))
+            except Exception as e:
+                r +=1
 
         if 'Y' in name:
             
@@ -630,8 +633,8 @@ def textParams(minimum, ncol=2, clean=True, params='All'):
             r = 1
             
         elif err<1:
-            r += int(np.round(-np.log10(np.abs(err))))
-
+            try: r += int(np.round(-np.log10(np.abs(err))))
+            except OverflowError: r +=1
 
         if 'Y' in name:
             
@@ -1040,7 +1043,7 @@ def plot_model(data,
                **kwargs):
     """ Tries to be an all-in-one 1D-plotting for (~kind of) HEP style.
         Can create pulls given a binning, and also evaluate chi2/DOF
-            - where DOF = nbins-params
+            - where DOF = nbins-params-1
         Also can print the fitted params with its error as given by a 
             zfit.minimizers.fitresult.FitResult
         It incorporates many dictionaries to customize the settings.
