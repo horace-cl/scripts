@@ -186,7 +186,7 @@ def create_constraint_B0Ks(model, fh_index=False):
     #Now define the "simple" constraints give the found index
     constAngParams = (
                  {'type': 'ineq', 'fun': lambda x:  x[fh_index]},
-                 {'type': 'ineq', 'fun': lambda x:  1-x[fh_index]},
+                 {'type': 'ineq', 'fun': lambda x:  3-x[fh_index]},
                 )
     print(fh_index)
 
