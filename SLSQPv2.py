@@ -3,14 +3,14 @@ import inspect
 import math
 from typing import Callable, Mapping, Optional, Union
 
-from zfit.minimizers.minimizers_scipy import ScipyBaseMinimizerV1
+from zfit.minimizers.minimizers_scipy import ScipyBaseMinimizer
 from zfit.minimizers.baseminimizer import (NOT_SUPPORTED, BaseMinimizer, minimize_supports,
                             print_minimization_status)
 from zfit.minimizers.termination import CRITERION_NOT_AVAILABLE, ConvergenceCriterion
 from zfit.minimizers.strategy import ZfitStrategy
 from zfit.minimizers.fitresult import FitResult
 
-class SLSQP(ScipyBaseMinimizerV1):
+class SLSQP(ScipyBaseMinimizer):
     def __init__(self,
                  tol: Optional[float] = 1e-9,
                  gradient: Optional[Union[Callable, str]] = None,
