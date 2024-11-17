@@ -549,23 +549,23 @@ def textParams2(minimum, ncol=2, clean=True):
         
     return texts
 
-def get_err_composedParam(parameter, minimum, n_randoms = 10000):
-    dependents = parameter.get_params()
-    covariance = minimum.covariance(dependents)
-    initial_values = [k.value().numpy() for k in dependents]
-    randoms_ = np.random.multivariate_normal(initial_values, 
-                                              covariance, 
-                                             size=n_randoms)
+# def get_err_composedParam(parameter, minimum, n_randoms = 10000):
+#     dependents = parameter.get_params()
+#     covariance = minimum.covariance(dependents)
+#     initial_values = [k.value().numpy() for k in dependents]
+#     randoms_ = np.random.multivariate_normal(initial_values, 
+#                                               covariance, 
+#                                              size=n_randoms)
     
-    values = list()
-    for rr in randoms_:
-        for index, param in enumerate(dependents): param.set_value(rr[index])
-        values.append(parameter.value().numpy())
+#     values = list()
+#     for rr in randoms_:
+#         for index, param in enumerate(dependents): param.set_value(rr[index])
+#         values.append(parameter.value().numpy())
 
-    for index, param in enumerate(dependents):
-        param.set_value(initial_values[index])    
+#     for index, param in enumerate(dependents):
+#         param.set_value(initial_values[index])    
         
-    return np.std(values)
+#     return np.std(values)
 
 
 
@@ -595,7 +595,7 @@ def textParams(minimum, ncol=2, clean=True, params='All'):
                 # p1 = param.params['param_1']
                 # ERR = minimum.params[p0][hesse_str]['error']
                 # result_[hesse_str] = dict(error = ERR*p1.value().numpy())  
-                err_eval = get_err_composedParam(param, minimum, n_randoms = 10000)               
+                err_eval =customStats. get_err_composedParam(param, minimum, n_randoms = 10000)               
                 result_[hesse_str] = dict(error=err_eval)
 
 

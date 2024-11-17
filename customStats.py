@@ -211,3 +211,41 @@ def histogram_weighted(data, bins, weights=None,density=False,symetric_errs=True
         errors_weighted = poisson_interval(counts)
 
     return (counts_weighted, bin_edges, errors_weighted)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def get_err_composedParam(parameter, minimum, n_randoms = 10000, cl=68):
+    dependents = parameter.get_params()
+    covariance = minimum.covariance(dependents)
+    initial_values = [minimum.params[k]['value'] for k in dependents]
+    randoms_ = np.random.multivariate_normal(initial_values, 
+                                              covariance, 
+                                             size=n_randoms)
+    
+    values = list()
+    for rr in randoms_:
+        for index, param in enumerate(dependents): param.set_value(rr[index])
+        values.append(parameter.value().numpy())
+
+    for index, param in enumerate(dependents):
+        param.set_value(initial_values[index])    
+        
+    if type(cl)==str:
+        return np.std(values)
+    else:
+        low, high = np.percentile(values, (100-cl)/2), np.percentile(values, 100-(100-cl)/2)
+        return parameter.value().numpy()-low, high-parameter.value().numpy()
